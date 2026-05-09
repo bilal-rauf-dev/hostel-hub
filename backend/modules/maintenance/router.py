@@ -1,8 +1,161 @@
-from fastapi import APIRouter
+from typing import Any
+
+import psycopg
+from fastapi import APIRouter, Depends, HTTPException
+
+from auth.dependencies import get_current_user, require_admin
+from database.connection import get_db_pool
 
 router = APIRouter(prefix="/api/v1/maintenance", tags=["maintenance"])
 
 
-@router.get("/")
-async def module_health() -> dict:
-    return {"success": True, "data": None, "message": "module online"}
+def json_response(success: bool, data: Any = None, message: str = "") -> dict:
+    return {"success": success, "data": data, "message": message}
+
+
+@router.post("/tickets")
+async def create_ticket(
+    title: str,
+    description: str,
+    category: str,
+    priority: str,
+    room_number: str,
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Create a new maintenance ticket."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO maintenance_tickets
+                    (student_id, title, description, category, priority, room_number, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+                    RETURNING ticket_id, student_id, title, description, category,
+                              priority, room_number, status, created_at
+                    """,
+                    (user["user_id"], title, description, category, priority, room_number),
+                )
+                ticket = await cur.fetchone()
+                await conn.commit()
+        
+        return json_response(True, ticket, "Ticket created successfully")
+    except Exception as e:
+        return json_response(False, None, f"Failed to create ticket: {str(e)}")
+
+
+@router.get("/tickets")
+async def get_tickets(
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Get maintenance tickets (role-aware: students see only their own, admins see all)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                if user["role"] == "student":
+                    # Students see only their own tickets
+                    await cur.execute(
+                        """
+                        SELECT mt.ticket_id, mt.student_id, mt.title, mt.description,
+                               mt.category, mt.priority, mt.room_number, mt.status,
+                               mt.assigned_to, mt.created_at, mt.updated_at,
+                               u.display_name as student_name, u.room_number as student_room
+                        FROM maintenance_tickets mt
+                        JOIN users u ON mt.student_id = u.user_id
+                        WHERE mt.student_id = %s
+                        ORDER BY mt.created_at DESC
+                        """,
+                        (user["user_id"],),
+                    )
+                else:
+                    # Admins see all tickets
+                    await cur.execute(
+                        """
+                        SELECT mt.ticket_id, mt.student_id, mt.title, mt.description,
+                               mt.category, mt.priority, mt.room_number, mt.status,
+                               mt.assigned_to, mt.created_at, mt.updated_at,
+                               u.display_name as student_name, u.room_number as student_room
+                        FROM maintenance_tickets mt
+                        JOIN users u ON mt.student_id = u.user_id
+                        ORDER BY mt.priority DESC, mt.created_at DESC
+                        """
+                    )
+                tickets = await cur.fetchall()
+        
+        return json_response(True, tickets, "Tickets retrieved successfully")
+    except Exception as e:
+        return json_response(False, None, f"Failed to retrieve tickets: {str(e)}")
+
+
+@router.patch("/tickets/{ticket_id}/status")
+async def update_ticket_status(
+    ticket_id: int,
+    status: str,
+    admin: dict = Depends(require_admin),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Update ticket status (admin only, calls stored procedure)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                # Call stored procedure: SELECT * FROM update_ticket_status($1, $2, $3)
+                await cur.execute(
+                    """
+                    SELECT * FROM update_ticket_status(%s, %s, %s)
+                    """,
+                    (ticket_id, status, admin["user_id"]),
+                )
+                result = await cur.fetchone()
+                await conn.commit()
+        
+        if result and result.get("ticket_id"):
+            return json_response(True, result, "Ticket status updated successfully")
+        else:
+            return json_response(False, None, "Failed to update ticket status")
+    except Exception as e:
+        return json_response(False, None, f"Failed to update ticket status: {str(e)}")
+
+
+@router.patch("/tickets/{ticket_id}/assign")
+async def assign_ticket(
+    ticket_id: int,
+    assigned_to: int,
+    admin: dict = Depends(require_admin),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Assign ticket to staff member (admin only)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                # Check if staff user exists
+                await cur.execute(
+                    "SELECT user_id FROM users WHERE user_id = %s AND role IN ('admin', 'staff')",
+                    (assigned_to,),
+                )
+                staff = await cur.fetchone()
+                
+                if not staff:
+                    return json_response(False, None, "Staff member not found")
+                
+                # Assign ticket
+                await cur.execute(
+                    """
+                    UPDATE maintenance_tickets
+                    SET assigned_to = %s
+                    WHERE ticket_id = %s
+                    RETURNING ticket_id, student_id, title, description, category,
+                              priority, room_number, status, assigned_to, created_at, updated_at
+                    """,
+                    (assigned_to, ticket_id),
+                )
+                ticket = await cur.fetchone()
+                await conn.commit()
+        
+        if ticket:
+            return json_response(True, ticket, "Ticket assigned successfully")
+        else:
+            return json_response(False, None, "Ticket not found")
+    except Exception as e:
+        return json_response(False, None, f"Failed to assign ticket: {str(e)}")

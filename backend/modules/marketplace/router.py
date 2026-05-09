@@ -1,8 +1,322 @@
-from fastapi import APIRouter
+from typing import Any
+
+import psycopg
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from auth.dependencies import get_current_user
+from database.connection import get_db_pool
 
 router = APIRouter(prefix="/api/v1/marketplace", tags=["marketplace"])
 
 
-@router.get("/")
-async def module_health() -> dict:
-    return {"success": True, "data": None, "message": "module online"}
+def json_response(success: bool, data: Any = None, message: str = "") -> dict:
+    return {"success": success, "data": data, "message": message}
+
+
+@router.get("/listings")
+async def get_listings(
+    search: str | None = Query(None),
+    category: str | None = Query(None),
+    min_price: float | None = Query(None),
+    max_price: float | None = Query(None),
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Get marketplace listings with optional filters."""
+    try:
+        # Build dynamic WHERE clause
+        where_clauses = ["status = 'active'"]
+        params = []
+        
+        if search:
+            where_clauses.append("(title ILIKE %s OR description ILIKE %s)")
+            search_term = f"%{search}%"
+            params.extend([search_term, search_term])
+        
+        if category:
+            where_clauses.append("category = %s")
+            params.append(category)
+        
+        if min_price is not None:
+            where_clauses.append("price >= %s")
+            params.append(min_price)
+        
+        if max_price is not None:
+            where_clauses.append("price <= %s")
+            params.append(max_price)
+        
+        where_clause = " AND ".join(where_clauses)
+        
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                await cur.execute(
+                    f"""
+                    SELECT ml.listing_id, ml.seller_id, ml.title, ml.description,
+                           ml.category, ml.price, ml.image_url, ml.status,
+                           ml.created_at, u.display_name as seller_name, u.contact_number
+                    FROM marketplace_listings ml
+                    JOIN users u ON ml.seller_id = u.user_id
+                    WHERE {where_clause}
+                    ORDER BY ml.created_at DESC
+                    """,
+                    tuple(params),
+                )
+                listings = await cur.fetchall()
+        
+        return json_response(True, listings, "Listings retrieved successfully")
+    except Exception as e:
+        return json_response(False, None, f"Failed to retrieve listings: {str(e)}")
+
+
+@router.post("/listings")
+async def create_listing(
+    title: str,
+    description: str,
+    category: str,
+    price: float,
+    image_url: str | None = None,
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Create a new marketplace listing."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO marketplace_listings
+                    (seller_id, title, description, category, price, image_url, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'active')
+                    RETURNING listing_id, seller_id, title, description, category,
+                              price, image_url, status, created_at
+                    """,
+                    (user["user_id"], title, description, category, price, image_url),
+                )
+                listing = await cur.fetchone()
+                await conn.commit()
+        
+        return json_response(True, listing, "Listing created successfully")
+    except Exception as e:
+        return json_response(False, None, f"Failed to create listing: {str(e)}")
+
+
+@router.patch("/listings/{listing_id}")
+async def update_listing(
+    listing_id: int,
+    title: str | None = None,
+    description: str | None = None,
+    category: str | None = None,
+    price: float | None = None,
+    image_url: str | None = None,
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Update a marketplace listing (seller or admin only)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                # Check ownership
+                await cur.execute(
+                    "SELECT seller_id FROM marketplace_listings WHERE listing_id = %s",
+                    (listing_id,),
+                )
+                listing = await cur.fetchone()
+                
+                if not listing:
+                    return json_response(False, None, "Listing not found")
+                
+                if listing["seller_id"] != user["user_id"] and user["role"] != "admin":
+                    raise HTTPException(status_code=403, detail="Not authorized to update this listing")
+                
+                # Build dynamic update
+                updates = []
+                params = []
+                
+                if title is not None:
+                    updates.append("title = %s")
+                    params.append(title)
+                if description is not None:
+                    updates.append("description = %s")
+                    params.append(description)
+                if category is not None:
+                    updates.append("category = %s")
+                    params.append(category)
+                if price is not None:
+                    updates.append("price = %s")
+                    params.append(price)
+                if image_url is not None:
+                    updates.append("image_url = %s")
+                    params.append(image_url)
+                
+                if not updates:
+                    return json_response(False, None, "No fields to update")
+                
+                params.append(listing_id)
+                update_clause = ", ".join(updates)
+                
+                await cur.execute(
+                    f"""
+                    UPDATE marketplace_listings
+                    SET {update_clause}
+                    WHERE listing_id = %s
+                    RETURNING listing_id, seller_id, title, description, category,
+                              price, image_url, status, created_at
+                    """,
+                    tuple(params),
+                )
+                updated_listing = await cur.fetchone()
+                await conn.commit()
+        
+        return json_response(True, updated_listing, "Listing updated successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        return json_response(False, None, f"Failed to update listing: {str(e)}")
+
+
+@router.delete("/listings/{listing_id}")
+async def delete_listing(
+    listing_id: int,
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Delete a marketplace listing (seller or admin only)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                # Check ownership
+                await cur.execute(
+                    "SELECT seller_id FROM marketplace_listings WHERE listing_id = %s",
+                    (listing_id,),
+                )
+                listing = await cur.fetchone()
+                
+                if not listing:
+                    return json_response(False, None, "Listing not found")
+                
+                if listing["seller_id"] != user["user_id"] and user["role"] != "admin":
+                    raise HTTPException(status_code=403, detail="Not authorized to delete this listing")
+                
+                # Mark as removed
+                await cur.execute(
+                    "UPDATE marketplace_listings SET status = 'removed' WHERE listing_id = %s",
+                    (listing_id,),
+                )
+                await conn.commit()
+        
+        return json_response(True, {"listing_id": listing_id}, "Listing deleted successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        return json_response(False, None, f"Failed to delete listing: {str(e)}")
+
+
+@router.post("/listings/{listing_id}/order")
+async def place_order(
+    listing_id: int,
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Place an order for a marketplace listing (calls stored procedure)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                # Call stored procedure: SELECT * FROM place_order($1, $2, $3)
+                await cur.execute(
+                    """
+                    SELECT * FROM place_order(%s, %s, %s)
+                    """,
+                    (listing_id, user["user_id"], None),  # $3 would be delivery_date if needed
+                )
+                result = await cur.fetchone()
+                await conn.commit()
+        
+        if result and result.get("order_id"):
+            return json_response(True, result, "Order placed successfully")
+        else:
+            return json_response(False, None, "Failed to place order")
+    except psycopg.errors.ForeignKeyViolation:
+        return json_response(False, None, "Listing not found")
+    except Exception as e:
+        error_msg = str(e)
+        if "self" in error_msg.lower():
+            return json_response(False, None, "Cannot order your own item")
+        return json_response(False, None, f"Failed to place order: {error_msg}")
+
+
+@router.patch("/orders/{order_id}/status")
+async def update_order_status(
+    order_id: int,
+    status: str,
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Update order status (seller only)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                # Check seller ownership
+                await cur.execute(
+                    """
+                    SELECT mo.order_id, mo.seller_id, mo.status
+                    FROM marketplace_orders mo
+                    WHERE mo.order_id = %s
+                    """,
+                    (order_id,),
+                )
+                order = await cur.fetchone()
+                
+                if not order:
+                    return json_response(False, None, "Order not found")
+                
+                if order["seller_id"] != user["user_id"] and user["role"] != "admin":
+                    raise HTTPException(status_code=403, detail="Not authorized to update this order")
+                
+                # Update order status
+                await cur.execute(
+                    """
+                    UPDATE marketplace_orders
+                    SET status = %s, updated_at = NOW()
+                    WHERE order_id = %s
+                    RETURNING order_id, buyer_id, seller_id, listing_id, status, created_at, updated_at
+                    """,
+                    (status, order_id),
+                )
+                updated_order = await cur.fetchone()
+                await conn.commit()
+        
+        return json_response(True, updated_order, "Order status updated successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        return json_response(False, None, f"Failed to update order status: {str(e)}")
+
+
+@router.get("/orders/mine")
+async def get_my_orders(
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Get current user's marketplace orders."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict) as cur:
+                await cur.execute(
+                    """
+                    SELECT mo.order_id, mo.buyer_id, mo.seller_id, mo.listing_id,
+                           mo.status, mo.created_at, mo.updated_at,
+                           ml.title as listing_title, ml.price,
+                           u.display_name as seller_name
+                    FROM marketplace_orders mo
+                    JOIN marketplace_listings ml ON mo.listing_id = ml.listing_id
+                    JOIN users u ON mo.seller_id = u.user_id
+                    WHERE mo.buyer_id = %s
+                    ORDER BY mo.created_at DESC
+                    """,
+                    (user["user_id"],),
+                )
+                orders = await cur.fetchall()
+        
+        return json_response(True, orders, "Orders retrieved successfully")
+    except Exception as e:
+        return json_response(False, None, f"Failed to retrieve orders: {str(e)}")
