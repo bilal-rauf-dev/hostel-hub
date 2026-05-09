@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: 45 40% 98%; /* #FAF9F6 */
+    --foreground: 147 10% 30%; /* #4D5D53 equivalent */
+    --card: 0 0% 100%;
+    --card-foreground: 147 10% 30%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 147 10% 30%;
+    --primary: 31 51% 64%; /* #D4A373 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 148 5% 50%; /* #79837C */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 60 7% 95%; /* #F4F4F2 */
+    --muted-foreground: 148 5% 60%;
+    --accent: 71 45% 86%; /* #E9EDC9 */
+    --accent-foreground: 147 10% 30%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 60 5% 90%;
+    --input: 60 7% 95%; /* #F4F4F2 */
+    --ring: 31 51% 64%;
+    --radius: 1rem;
+  }
+
+  * {
+    @apply border-emerald-900/5;
+  }
+  
+  body {
+    @apply bg-[#FAF9F6] text-[#4D5D53];
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+.animate-in {
+  animation: animate-in 0.5s ease-out forwards;
+}
+
+@keyframes animate-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

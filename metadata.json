@@ -1,0 +1,9 @@
+{
+  "name": "Hostel Hub",
+  "description": "A centralized digital gateway for hostel living, featuring marketplace, maintenance tickets, community events, and staff admin tools.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
