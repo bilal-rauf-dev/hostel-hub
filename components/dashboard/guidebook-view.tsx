@@ -1,6 +1,8 @@
 'use client'
 
 import { motion } from 'motion/react'
+import { useState, useEffect } from 'react'
+import { guidebookApi } from '@/lib/api'
 import { 
   BookOpen, 
   Wifi, 
@@ -14,28 +16,26 @@ import {
   PhoneCall
 } from 'lucide-react'
 
-const GUIDES = [
-  {
-    title: 'Wi-Fi & Connectivity',
-    desc: 'How to connect to High-Speed network and manage devices.',
-    icon: Wifi,
-    color: 'bg-blue-50 text-blue-500'
-  },
-  {
-    title: 'Kitchen Etiquette',
-    desc: 'Cooking hours, storage rules, and cleaning schedules.',
-    icon: ChefHat,
-    color: 'bg-orange-50 text-orange-500'
-  },
-  {
-    title: 'Waste & Recycling',
-    desc: 'Understanding the disposal system and collection days.',
-    icon: Trash2,
-    color: 'bg-emerald-50 text-emerald-500'
-  }
-]
-
 export function GuidebookView() {
+  const [entries, setEntries] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string|null>(null)
+
+  useEffect(()=>{
+    let mounted = true
+    const load = async ()=>{
+      try{
+        setLoading(true)
+        const res = await guidebookApi.getEntries()
+        if (!mounted) return
+        if (res.data?.success) setEntries(res.data.data || [])
+        else setError(res.data?.message || 'Failed to load guidebook')
+      }catch(e:any){ setError(e?.message || 'Network error') }
+      finally{ if (mounted) setLoading(false) }
+    }
+    load()
+    return ()=>{ mounted = false }
+  },[])
   return (
     <motion.div 
       initial={{ opacity: 0, x: 20 }}
@@ -64,20 +64,20 @@ export function GuidebookView() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {GUIDES.map((guide, idx) => (
+        {(entries || []).map((guide, idx) => (
           <motion.div
-            key={guide.title}
+            key={guide.id || guide.title || idx}
             initial={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
             animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
             transition={{ delay: idx * 0.1, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#D4A373' }}
             className="bg-white p-8 rounded-[3rem] border border-[#F0F0EE] shadow-sm hover:shadow-xl transition-all duration-500 group cursor-pointer"
           >
-            <div className={`w-16 h-16 rounded-[1.5rem] ${guide.color} flex items-center justify-center mb-8 transition-all duration-500 group-hover:scale-110 group-hover:rotate-6 shadow-sm`}>
-              <guide.icon className="h-8 w-8" />
+            <div className={`w-16 h-16 rounded-[1.5rem] bg-blue-50 text-blue-500 flex items-center justify-center mb-8 transition-all duration-500 group-hover:scale-110 group-hover:rotate-6 shadow-sm`}>
+              <Wifi className="h-8 w-8" />
             </div>
             <h4 className="text-2xl font-black text-[#4D5D53] tracking-tighter mb-4 group-hover:text-[#D4A373] transition-colors leading-tight">{guide.title}</h4>
-            <p className="text-sm font-medium text-[#79837C] leading-relaxed mb-8 tracking-tight">{guide.desc}</p>
+            <p className="text-sm font-medium text-[#79837C] leading-relaxed mb-8 tracking-tight">{guide.content || guide.desc || guide.description}</p>
             <div className="flex items-center text-[10px] font-black uppercase tracking-[0.25em] text-[#D4A373] group-hover:pl-2 transition-all">
               Comprehensive Guide <ChevronRight className="h-4 w-4 ml-1" />
             </div>

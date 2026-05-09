@@ -14,6 +14,7 @@ from modules.marketplace.router import router as marketplace_router
 from modules.notifications.router import router as notifications_router
 from modules.polls.router import router as polls_router
 from modules.users.router import router as users_router
+from modules.safety_alerts.router import router as safety_alerts_router
 
 
 @asynccontextmanager
@@ -44,6 +45,7 @@ app.include_router(events_router)
 app.include_router(lost_found_router)
 app.include_router(guidebook_router)
 app.include_router(notifications_router)
+app.include_router(safety_alerts_router)
 
 
 @app.get("/health")

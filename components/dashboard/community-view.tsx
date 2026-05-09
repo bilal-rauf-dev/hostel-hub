@@ -16,55 +16,72 @@ import {
   ChevronRight
 } from 'lucide-react'
 import Image from 'next/image'
-
-const POSTS = [
-  {
-    id: 1,
-    author: 'Alex Rivers',
-    avatar: 'https://picsum.photos/seed/alex/100/100',
-    content: 'Just moved into Block B! Anyone up for some badminton this weekend? Looking for a few more players for the finals. 🏸',
-    time: '2h ago',
-    likes: 12,
-    comments: 4,
-    tags: ['Sports', 'Social']
-  },
-  {
-    id: 2,
-    author: 'Sarah Jenkins',
-    avatar: 'https://picsum.photos/seed/sarah/100/100',
-    content: 'The new study area in Building C is amazing! Much quieter than the main lounge. Highly recommend checking it out if you have exams coming up.',
-    time: '5h ago',
-    likes: 24,
-    comments: 8,
-    tags: ['Study', 'Tips']
-  },
-  {
-    id: 3,
-    author: 'Resident Hub',
-    avatar: 'https://picsum.photos/seed/hub/100/100',
-    content: 'Reminder: Kitchen deep clean this Saturday at 2 PM. Please ensure all personal items are labeled! 🥘',
-    time: 'Yesterday',
-    likes: 45,
-    comments: 12,
-    tags: ['Announcement']
-  }
-]
-
-const POLLS = [
-  {
-    id: 1,
-    question: 'Favorite study hours in the library?',
-    totalVotes: 156,
-    options: [
-      { text: 'Morning (8AM - 12PM)', votes: 45 },
-      { text: 'Afternoon (1PM - 5PM)', votes: 32 },
-      { text: 'Late Night (8PM - 2AM)', votes: 79 }
-    ],
-    deadline: '2h left'
-  }
-]
+import { useEffect, useState } from 'react'
+import { pollsApi } from '@/lib/api'
+import { isAdmin } from '@/lib/auth'
 
 export function CommunityView() {
+  const [polls, setPolls] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [question, setQuestion] = useState('')
+  const [options, setOptions] = useState<string[]>(['', ''])
+  const [deadline, setDeadline] = useState('')
+
+  useEffect(() => {
+    let mounted = true
+    const load = async () => {
+      try {
+        setLoading(true)
+        const res = await pollsApi.getPolls()
+        if (!mounted) return
+        if (res.data?.success) setPolls(res.data.data || [])
+        else setError(res.data?.message || 'Failed to load polls')
+      } catch (err: any) {
+        setError(err?.message || 'Network error')
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+    load()
+    return () => { mounted = false }
+  }, [])
+
+  const handleOpenCreate = () => setShowCreate(true)
+
+  const handleCreatePoll = async () => {
+    try {
+      setLoading(true)
+      const opts = options.filter(o => o.trim() !== '')
+      if (!question.trim() || opts.length < 2) {
+        alert('Provide a question and at least 2 options')
+        return
+      }
+      const res = await pollsApi.createPoll(question, opts, deadline)
+      if (res.data?.success) {
+        const r = await pollsApi.getPolls()
+        if (r.data?.success) setPolls(r.data.data || [])
+        setShowCreate(false)
+        setQuestion('')
+        setOptions(['',''])
+        setDeadline('')
+        alert('Poll created')
+      } else {
+        alert(res.data?.message || 'Failed to create poll')
+      }
+    } catch (e:any) {
+      alert(e?.message || 'Network error')
+    } finally { setLoading(false) }
+  }
+
+  const updateOption = (idx: number, val: string) => {
+    setOptions(prev => prev.map((o,i) => i===idx?val:o))
+  }
+
+  const addOption = () => { if (options.length < 5) setOptions(prev=>[...prev,'']) }
+  const removeOption = (idx:number) => { if (options.length > 2) setOptions(prev=>prev.filter((_,i)=>i!==idx)) }
+
   return (
     <motion.div 
       initial={{ opacity: 0, x: 20 }}
@@ -86,8 +103,42 @@ export function CommunityView() {
           <button className="p-2.5 bg-white border border-[#F0F0EE] rounded-xl text-[#79837C] hover:bg-[#FAF9F6] transition-colors shadow-sm">
             <Filter className="h-5 w-5" />
           </button>
+          {isAdmin() && (
+            <button onClick={handleOpenCreate} className="px-4 py-2 bg-[#4D5D53] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg ml-2">
+              Create Poll
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Create Poll Modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-xl">
+            <h4 className="text-lg font-black mb-4">Create Poll</h4>
+            <input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Question" className="w-full p-3 border rounded-md mb-3" />
+            <div className="space-y-2 mb-3">
+              {options.map((opt, idx) => (
+                <div key={idx} className="flex gap-2">
+                  <input value={opt} onChange={e=>updateOption(idx, e.target.value)} placeholder={`Option ${idx+1}`} className="flex-1 p-2 border rounded-md" />
+                  <button onClick={()=>removeOption(idx)} disabled={options.length<=2} className="px-3 bg-red-50 text-red-600 rounded-md">-</button>
+                </div>
+              ))}
+              <div>
+                <button onClick={addOption} disabled={options.length>=5} className="px-3 py-1 bg-[#FAF9F6] rounded-md">Add option</button>
+              </div>
+            </div>
+            <div className="mb-4">
+              <label className="text-xs font-bold">Deadline</label>
+              <input type="datetime-local" value={deadline} onChange={e=>setDeadline(e.target.value)} className="w-full p-2 border rounded-md mt-1" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={()=>setShowCreate(false)} className="px-4 py-2 border rounded-md">Cancel</button>
+              <button onClick={handleCreatePoll} className="px-4 py-2 bg-[#4D5D53] text-white rounded-md">Create</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
@@ -126,7 +177,7 @@ export function CommunityView() {
           {/* Feed */}
           <div className="space-y-8">
             <AnimatePresence mode="popLayout">
-              {POLLS.map(poll => (
+              {polls.map(poll => (
                 <motion.div
                   key={`poll-${poll.id}`}
                   initial={{ opacity: 0, x: -30, filter: 'blur(10px)' }}
@@ -139,19 +190,21 @@ export function CommunityView() {
                   </div>
                   <h4 className="text-2xl font-black text-[#4D5D53] tracking-tighter mb-8 leading-tight">{poll.question}</h4>
                   <div className="space-y-5">
-                    {poll.options.map(option => {
-                      const percentage = Math.round((option.votes / poll.totalVotes) * 100)
+                    {(poll.options || []).map((option: any) => {
+                      const total = poll.total_votes || poll.totalVotes || (poll.options || []).reduce((s:any,o:any)=>s+(o.votes||0),0)
+                      const votes = option.votes || option.vote_count || 0
+                      const percentage = total > 0 ? Math.round((votes / total) * 100) : 0
                       return (
-                        <button key={option.text} className="w-full relative group/opt outline-none">
+                        <button key={option.id || option.text} onClick={async ()=>{ try { await pollsApi.castVote(poll.poll_id || poll.id, option.id || option.option_id || option.index); const res = await pollsApi.getPollResults(poll.poll_id || poll.id); if (res.data?.success) { /* update poll options locally */ } } catch(e){ console.error(e) } }} className="w-full relative group/opt outline-none">
                           <div className="flex justify-between items-center mb-2 px-1">
-                            <span className="text-sm font-black text-[#4D5D53] tracking-tight">{option.text}</span>
-                            <span className="text-[10px] font-black text-[#D4A373] tabular-nums uppercase tracking-widest">{percentage}% ({option.votes} votes)</span>
+                            <span className="text-sm font-black text-[#4D5D53] tracking-tight">{option.text || option.label}</span>
+                            <span className="text-[10px] font-black text-[#D4A373] tabular-nums uppercase tracking-widest">{percentage}% ({votes} votes)</span>
                           </div>
                           <div className="h-4 bg-[#FAF9F6] rounded-full overflow-hidden border border-[#F0F0EE] relative">
                             <motion.div 
                               initial={{ width: 0 }}
                               animate={{ width: `${percentage}%` }}
-                              transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1], delay: 0.5 }}
+                              transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
                               className="h-full bg-[#E9EDC9] rounded-full group-hover/opt:bg-[#D4A373]/20 transition-colors z-10 relative"
                             />
                             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
@@ -161,7 +214,7 @@ export function CommunityView() {
                     })}
                   </div>
                   <div className="flex items-center justify-between mt-10 pt-8 border-t border-[#F0F0EE]">
-                     <p className="text-[11px] text-[#9A9A9A] font-bold uppercase tracking-wide">{poll.totalVotes} student responses • {poll.deadline}</p>
+                     <p className="text-[11px] text-[#9A9A9A] font-bold uppercase tracking-wide">{poll.total_votes || poll.totalVotes || 0} student responses • {poll.deadline || ''}</p>
                      <button className="text-[10px] font-black uppercase tracking-widest text-[#4D5D53] hover:text-[#D4A373] transition-colors flex items-center gap-2">
                        Vote Now <ChevronRight className="h-3 w-3" />
                      </button>
@@ -169,70 +222,8 @@ export function CommunityView() {
                 </motion.div>
               ))}
 
-              {POSTS.map((post, idx) => (
-                <motion.div
-                  key={`post-${post.id}`}
-                  initial={{ opacity: 0, x: -30, filter: 'blur(10px)' }}
-                  animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                  transition={{ delay: 0.1 * (idx + 1), duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                  className="bg-white p-8 rounded-[3rem] border border-[#F0F0EE] shadow-sm group hover:border-[#D4A373]/20 transition-all duration-300"
-                >
-                  <div className="flex justify-between items-start mb-8">
-                    <div className="flex items-center gap-5">
-                      <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-lg ring-4 ring-white group-hover:ring-[#D4A373]/20 transition-all duration-500 transform group-hover:rotate-3">
-                        <Image 
-                          src={post.avatar} 
-                          alt={post.author}
-                          width={56}
-                          height={56}
-                          className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      </div>
-                      <div>
-                        <h4 className="text-lg font-black text-[#4D5D53] group-hover:text-[#D4A373] transition-colors tracking-tight">{post.author}</h4>
-                        <p className="text-[10px] text-[#9A9A9A] font-black uppercase tracking-widest">{post.time}</p>
-                      </div>
-                    </div>
-                    <button className="w-10 h-10 rounded-xl bg-[#FAF9F6] border border-[#F0F0EE] flex items-center justify-center text-[#BDBDBD] hover:text-[#4D5D53] hover:bg-[#FAF9F6] transition-all">
-                      <MoreHorizontal className="h-5 w-5" />
-                    </button>
-                  </div>
-                  
-                  <p className="text-[#4D5D53] text-[15px] font-medium leading-relaxed mb-8 tracking-tight">
-                    {post.content}
-                  </p>
-
-                  <div className="flex flex-wrap gap-2.5 mb-8">
-                    {post.tags.map(tag => (
-                      <span key={tag} className="px-4 py-1.5 bg-[#FAF9F6] border border-[#F0F0EE] rounded-full text-[9px] font-black uppercase tracking-[0.15em] text-[#79837C] group-hover:bg-[#FEFAE0] group-hover:text-[#D4A373] transition-all cursor-pointer">
-                        #{tag}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="h-[1px] bg-[#F0F0EE] w-full mb-8 group-hover:bg-[#D4A373]/10 transition-colors" />
-
-                  <div className="flex items-center gap-10">
-                    <button className="flex items-center gap-3 text-[#79837C] hover:text-red-500 transition-all font-black uppercase tracking-widest text-[10px] group/btn">
-                      <div className="p-2.5 bg-[#FAF9F6] rounded-xl group-hover/btn:bg-red-50 transition-colors">
-                        <Heart className="h-5 w-5 transition-transform group-hover/btn:scale-125" />
-                      </div>
-                      {post.likes}
-                    </button>
-                    <button className="flex items-center gap-3 text-[#79837C] hover:text-[#D4A373] transition-all font-black uppercase tracking-widest text-[10px] group/btn">
-                       <div className="p-2.5 bg-[#FAF9F6] rounded-xl group-hover/btn:bg-[#FEFAE0] transition-colors">
-                        <MessageSquare className="h-5 w-5 transition-transform group-hover/btn:scale-125" />
-                      </div>
-                      {post.comments}
-                    </button>
-                    <button className="flex items-center gap-3 text-[#79837C] hover:text-[#4D5D53] transition-all font-black uppercase tracking-widest text-[10px] group/btn ml-auto">
-                      <Share2 className="h-5 w-5 transition-transform group-hover/btn:scale-125" />
-                      Share
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
+              {/* Community posts not available via API in this build */}
+              <div className="p-6 text-sm text-[#9A9A9A]">Community posts are currently unavailable.</div>
             </AnimatePresence>
           </div>
         </div>

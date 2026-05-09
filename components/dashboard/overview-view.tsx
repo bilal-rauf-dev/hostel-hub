@@ -13,8 +13,54 @@ import {
 } from 'lucide-react'
 
 import Image from 'next/image'
+import { useEffect, useState } from 'react'
+import { marketplaceApi, maintenanceApi, notificationsApi } from '@/lib/api'
 
 export function OverviewView() {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [recentListings, setRecentListings] = useState<any[]>([])
+  const [recentTickets, setRecentTickets] = useState<any[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    let mounted = true
+    const load = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const [listRes, ticketRes, notifRes] = await Promise.all([
+          marketplaceApi.getListings(),
+          maintenanceApi.getTickets(),
+          notificationsApi.getNotifications(),
+        ])
+
+        if (!mounted) return
+
+        if (listRes.data?.success) {
+          setRecentListings((listRes.data.data || []).slice(0, 4))
+        }
+        if (ticketRes.data?.success) {
+          setRecentTickets((ticketRes.data.data || []).slice(0, 4))
+        }
+        if (notifRes.data?.success) {
+          setUnreadCount(notifRes.data.data?.unread_count || 0)
+        }
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load overview')
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+
+    load()
+    return () => { mounted = false }
+  }, [])
+
+  if (loading) return <div className="p-6">Loading overview...</div>
+  if (error) return <div className="p-6 text-red-500">Error: {error}</div>
+
   return (
     <motion.div 
       initial={{ x: -20, y: 20, opacity: 0, filter: 'blur(10px)' }}
@@ -125,19 +171,19 @@ export function OverviewView() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {[1, 2].map((i) => (
+            {recentListings.map((item, idx) => (
               <motion.div 
-                key={i}
+                key={item.listing_id || idx}
                 initial={{ x: -10, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.5 + (i * 0.1), duration: 0.6 }}
+                transition={{ delay: 0.5 + (idx * 0.05), duration: 0.6 }}
                 whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#D4A373' }}
                 className="bg-white rounded-3xl p-3 border border-[#EFEFE9] flex gap-4 group cursor-pointer shadow-sm transition-all duration-300"
               >
                 <div className="w-24 h-24 bg-[#F4F4F2] rounded-2xl overflow-hidden relative shrink-0">
                   <Image 
-                    src={`https://picsum.photos/seed/${i + 10}/200/200`} 
-                    alt="Product"
+                    src={item.image_url || `https://picsum.photos/seed/${idx + 10}/200/200`} 
+                    alt={item.title || 'Product'}
                     fill
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     referrerPolicy="no-referrer"
@@ -146,11 +192,11 @@ export function OverviewView() {
                 <div className="flex-1 py-1 flex flex-col justify-between">
                   <div>
                     <h5 className="text-sm font-black text-[#4D5D53] line-clamp-1 group-hover:text-[#D4A373] transition-colors">
-                      {i === 1 ? "Organic Desk Lamp" : "Thai Curry Set"}
+                      {item.title}
                     </h5>
-                    <p className="text-[10px] text-[#9A9A9A] font-bold">By {i === 1 ? "Mike R." : "Sarah J."}</p>
+                    <p className="text-[10px] text-[#9A9A9A] font-bold">By {item.seller_name || item.seller || 'Unknown'}</p>
                   </div>
-                  <p className="text-sm font-black text-[#4D5D53] tracking-tighter">${i === 1 ? "15.00" : "6.50"}</p>
+                  <p className="text-sm font-black text-[#4D5D53] tracking-tighter">${item.price?.toFixed?.(2) ?? item.price}</p>
                 </div>
               </motion.div>
             ))}
@@ -182,11 +228,8 @@ export function OverviewView() {
           initial={{ x: 20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ delay: 0.6, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-          className="space-y-6"
-        >
-          <h3 className="text-lg font-bold text-[#414D45]">Upcoming Events</h3>
           <div className="space-y-4">
-            {[
+            {recentTickets.map((event, idx) => (
               { title: "Yoga in the Garden", date: "Tomorrow, 8:00 AM", color: "bg-[#FEFAE0] text-[#D4A373] border-[#E9EDC9]" },
               { title: "Kitchen Deep Clean", date: "Sat, Oct 30, 2:00 PM", color: "bg-orange-50 text-orange-600 border-orange-100" }
             ].map((event, idx) => (
@@ -195,12 +238,12 @@ export function OverviewView() {
                 initial={{ x: 20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.7 + (idx * 0.1) }}
-                whileHover={{ x: 10, backgroundColor: '#FAF9F6' }}
-                className="bg-white p-4 rounded-2xl border border-[#EFEFE9] flex items-center gap-4 cursor-pointer group shadow-sm transition-all duration-300"
-              >
-                <div className="p-3 bg-[#F4F4F2] rounded-xl text-[#D4A373] group-hover:rotate-6 transition-all">
-                  <Calendar className="h-5 w-5" />
+                <div className={`w-3.5 h-3.5 rounded-full ${event.color || 'bg-[#FEFAE0] text-[#D4A373]'}`} />
+                <div className="flex-1">
+                  <h5 className="text-sm font-black text-[#4D5D53]">{event.title || event.title_text || event.subject}</h5>
+                  <p className="text-[10px] text-[#9A9A9A]">{event.created_at || event.date || event.time || ''}</p>
                 </div>
+                <ArrowRight className="h-4 w-4 text-[#9A9A9A]" />
                 <div className="flex-1">
                   <p className="text-xs font-bold text-[#414D45] group-hover:text-[#D4A373] transition-colors">{event.title}</p>
                   <p className="text-[10px] text-[#9A9A9A] font-medium">{event.date}</p>

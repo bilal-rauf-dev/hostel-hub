@@ -14,7 +14,9 @@ import {
   Volume2
 } from 'lucide-react'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { usersApi, authApi } from '../../lib/api'
+import { clearTokens } from '../../lib/auth'
 
 const SETTINGS_SECTIONS = [
   {
@@ -37,6 +39,69 @@ const SETTINGS_SECTIONS = [
 
 export function SettingsView() {
   const [activeTab, setActiveTab] = useState<'General' | 'Profile'>('General')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const [displayName, setDisplayName] = useState('')
+  const [email, setEmail] = useState('')
+  const [contactNumber, setContactNumber] = useState('')
+  const [roomAssignment, setRoomAssignment] = useState('')
+  const [studentId, setStudentId] = useState('')
+
+  useEffect(() => {
+    let mounted = true
+    const load = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const res = await usersApi.getMe()
+        if (res.data?.success) {
+          const d = res.data.data
+          if (!mounted) return
+          setDisplayName(d.display_name || '')
+          setEmail(d.email || '')
+          setContactNumber(d.contact_number || '')
+          setRoomAssignment(d.room_number || d.room_assignment || '')
+          setStudentId(d.student_id || '')
+        } else {
+          setError(res.data?.message || 'Failed to load profile')
+        }
+      } catch (err: any) {
+        setError(err?.message || 'Network error')
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+
+    load()
+    return () => { mounted = false }
+  }, [])
+
+  const handleSave = async () => {
+    try {
+      setSaving(true)
+      setError(null)
+      const res = await usersApi.updateMe(displayName, contactNumber)
+      if (!res.data?.success) {
+        setError(res.data?.message || 'Failed to save')
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Network error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    try {
+      await authApi.logout()
+    } catch (_) {
+      // ignore errors on logout
+    }
+    clearTokens()
+    if (typeof window !== 'undefined') window.location.href = '/login'
+  }
 
   return (
     <motion.div 

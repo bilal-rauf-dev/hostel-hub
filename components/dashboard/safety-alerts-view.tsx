@@ -12,16 +12,34 @@ import {
   CheckCircle2,
   Trash2
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { safetyAlertsApi } from '@/lib/api'
 
-const ALERT_HISTORY = [
-  { id: 'A-1', type: 'Critical', msg: 'Power maintenance scheduled for Block B starting at 2 PM.', method: 'All Users', time: '1d ago' },
-  { id: 'A-2', type: 'Warning', msg: 'Water tank cleaning in progress. Use spare tanks.', method: 'Block A, B', time: '3d ago' },
-  { id: 'A-3', type: 'Info', msg: 'Yoga session room changed to Hall B.', method: 'Specific Segment', time: '1w ago' },
-]
+// Loaded from notifications API
 
 export function SafetyAlertsView() {
-  const [selectedMethod, setSelectedMethod] = useState('All')
+   const [selectedMethod, setSelectedMethod] = useState('All')
+   const [alerts, setAlerts] = useState<any[]>([])
+   const [loading, setLoading] = useState(true)
+   const [error, setError] = useState<string|null>(null)
+   const [message, setMessage] = useState('')
+   const [sending, setSending] = useState(false)
+
+   useEffect(()=>{
+      let mounted = true
+      const load = async ()=>{
+         try{
+            setLoading(true)
+            const res = await safetyAlertsApi.getAlerts()
+            if (!mounted) return
+            if (res.data?.success) setAlerts(res.data.data || [])
+            else setError(res.data?.message || 'Failed to load alerts')
+         }catch(e:any){ setError(e?.message || 'Network error') }
+         finally{ if (mounted) setLoading(false) }
+      }
+      load()
+      return ()=>{ mounted = false }
+   },[])
 
   return (
     <motion.div 
@@ -61,6 +79,8 @@ export function SafetyAlertsView() {
                     <span className="text-[10px] font-bold text-orange-500">145 characters left</span>
                  </div>
                  <textarea 
+                    value={message}
+                    onChange={e=>setMessage(e.target.value)}
                     placeholder="Enter critical message here..."
                     className="w-full h-40 bg-[#FAF9F6] border border-[#F0F0EE] rounded-[2rem] p-8 text-sm focus:border-red-400 outline-none transition-all placeholder:text-[#BDBDBD] resize-none"
                  />
@@ -87,10 +107,20 @@ export function SafetyAlertsView() {
                  </div>
               </div>
 
-              <button className="w-full py-5 bg-red-500 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-red-600 transition-all shadow-xl shadow-red-500/20">
-                 <Send className="h-4 w-4" />
-                 Broadcast Emergency Alert
-              </button>
+                     <button onClick={async ()=>{
+                        try{
+                           setSending(true)
+                           await safetyAlertsApi.createAlert({ message, target: selectedMethod, level: 'critical', is_active: true })
+                           setMessage('')
+                           const r = await safetyAlertsApi.getAlerts()
+                           if (r.data?.success) setAlerts(r.data.data || [])
+                           alert('Alert broadcasted')
+                        }catch(e){ console.error(e); alert('Failed to broadcast') }
+                        finally{ setSending(false) }
+                     }} className="w-full py-5 bg-red-500 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-red-600 transition-all shadow-xl shadow-red-500/20">
+                         <Send className="h-4 w-4" />
+                         {sending? 'Sending...':'Broadcast Emergency Alert'}
+                     </button>
            </div>
         </div>
 
@@ -102,39 +132,46 @@ export function SafetyAlertsView() {
                  <History className="h-4 w-4 text-[#BDBDBD]" />
               </div>
               
-              <div className="space-y-4">
-                {ALERT_HISTORY.map((alert, idx) => (
-                  <motion.div
-                    key={alert.id}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.1 }}
-                    className="p-6 bg-[#FAF9F6] rounded-[2rem] border border-transparent hover:border-[#F0F0EE] transition-all group"
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                       <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                         alert.type === 'Critical' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'
-                       }`}>
-                         {alert.type}
-                       </span>
-                       <span className="text-[10px] font-bold text-[#BDBDBD]">{alert.time}</span>
-                    </div>
-                    <p className="text-sm font-bold text-[#4D5D53] leading-relaxed mb-4">{alert.msg}</p>
-                    <div className="flex items-center justify-between pt-4 border-t border-black/5">
-                       <div className="flex items-center gap-2">
-                          <BellRing className="h-3 w-3 text-[#BDBDBD]" />
-                          <span className="text-[10px] font-black text-[#BDBDBD] uppercase tracking-widest">{alert.method}</span>
-                       </div>
-                       <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="text-[10px] font-black text-red-400 flex items-center gap-1">
-                             <Trash2 className="h-3 w-3" />
-                             Void
-                          </button>
-                       </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
+                     <div className="space-y-4">
+                        {(alerts || []).map((alert, idx) => (
+                           <motion.div
+                              key={alert.id || idx}
+                              initial={{ opacity: 0, x: 20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: idx * 0.1 }}
+                              className="p-6 bg-[#FAF9F6] rounded-[2rem] border border-transparent hover:border-[#F0F0EE] transition-all group"
+                           >
+                              <div className="flex items-center justify-between mb-3">
+                                  <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                                     alert.level === 'critical' || alert.type === 'Critical' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'
+                                  }`}>
+                                     {alert.level || alert.type}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-[#BDBDBD]">{alert.time || alert.created_at}</span>
+                              </div>
+                              <p className="text-sm font-bold text-[#4D5D53] leading-relaxed mb-4">{alert.message || alert.msg}</p>
+                              <div className="flex items-center justify-between pt-4 border-t border-black/5">
+                                  <div className="flex items-center gap-2">
+                                       <BellRing className="h-3 w-3 text-[#BDBDBD]" />
+                                       <span className="text-[10px] font-black text-[#BDBDBD] uppercase tracking-widest">{alert.target || alert.method || 'All'}</span>
+                                  </div>
+                                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                       <button onClick={async ()=>{
+                                         try{
+                                           await safetyAlertsApi.toggleAlert(alert.alert_id || alert.id)
+                                           const r = await safetyAlertsApi.getAlerts()
+                                           if (r.data?.success) setAlerts(r.data.data || [])
+                                           alert('Alert updated')
+                                         }catch(e:any){ console.error(e); alert('Failed to update alert') }
+                                       }} className="text-[10px] font-black text-red-400 flex items-center gap-1">
+                                          <Trash2 className="h-3 w-3" />
+                                          Void
+                                       </button>
+                                   </div>
+                              </div>
+                           </motion.div>
+                        ))}
+                     </div>
            </div>
 
            <div className="bg-red-50 p-10 rounded-[3rem] border border-red-100 relative overflow-hidden group">

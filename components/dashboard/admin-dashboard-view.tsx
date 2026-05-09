@@ -1,6 +1,8 @@
 'use client'
 
 import { motion } from 'motion/react'
+import { useState, useEffect } from 'react'
+import { maintenanceApi, usersApi, marketplaceApi, pollsApi } from '@/lib/api'
 import { 
   Users, 
   Wrench, 
@@ -15,14 +17,36 @@ import {
   Mail
 } from 'lucide-react'
 
-const STATS = [
-  { label: 'Active Tickets', value: '12', trend: '+2 this week', icon: Wrench, color: 'text-blue-500 bg-blue-50' },
-  { label: 'Pending Users', value: '45', trend: 'Audit required', icon: Users, color: 'text-orange-500 bg-orange-50' },
-  { label: 'Marketplace Items', value: '128', trend: 'Moderate 5', icon: ShoppingBag, color: 'text-emerald-500 bg-emerald-50' },
-  { label: 'Active Polls', value: '3', trend: 'Ending soon', icon: BarChart3, color: 'text-purple-500 bg-purple-50' },
-]
-
 export function AdminDashboardView() {
+  const [stats, setStats] = useState<any[]>([])
+
+  useEffect(()=>{
+    let mounted = true
+    const load = async ()=>{
+      try{
+        const [tRes, uRes, mRes, pRes] = await Promise.allSettled([
+          maintenanceApi.getTickets(),
+          usersApi.getAllUsers(),
+          marketplaceApi.getListings(),
+          pollsApi.getPolls()
+        ])
+        if (!mounted) return
+        const tickets = tRes.status === 'fulfilled' && tRes.value.data?.success ? (tRes.value.data.data || []) : []
+        const users = uRes.status === 'fulfilled' && uRes.value.data?.success ? (uRes.value.data.data || []) : []
+        const listings = mRes.status === 'fulfilled' && mRes.value.data?.success ? (mRes.value.data.data || []) : []
+        const polls = pRes.status === 'fulfilled' && pRes.value.data?.success ? (pRes.value.data.data || []) : []
+
+        setStats([
+          { label: 'Active Tickets', value: String((tickets || []).length), trend: '', icon: Wrench, color: 'text-blue-500 bg-blue-50' },
+          { label: 'Pending Users', value: String((users || []).filter((u:any)=>u.verification_status==='pending').length), trend: '', icon: Users, color: 'text-orange-500 bg-orange-50' },
+          { label: 'Marketplace Items', value: String((listings || []).length), trend: '', icon: ShoppingBag, color: 'text-emerald-500 bg-emerald-50' },
+          { label: 'Active Polls', value: String((polls || []).length), trend: '', icon: BarChart3, color: 'text-purple-500 bg-purple-50' }
+        ])
+      }catch(e){ console.error(e) }
+    }
+    load()
+    return ()=>{ mounted = false }
+  },[])
   return (
     <motion.div 
       initial={{ opacity: 0, x: 20 }}

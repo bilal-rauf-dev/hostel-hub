@@ -4,6 +4,7 @@ import psycopg
 from fastapi import APIRouter, Depends
 
 from auth.dependencies import get_current_user
+from auth.dependencies import require_admin
 from database.connection import get_db_pool
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
@@ -96,3 +97,63 @@ async def update_current_user_profile(
         return json_response(True, updated_user, "Profile updated successfully")
     except Exception as e:
         return json_response(False, None, f"Profile update failed: {str(e)}")
+
+
+    @router.patch("/{user_id}/verify")
+    async def verify_user(
+        user_id: int,
+        admin: dict = Depends(require_admin),
+        pool=Depends(get_db_pool),
+    ) -> dict:
+        """Mark a user as verified (admin only)."""
+        try:
+            async with pool.connection() as conn:
+                async with conn.cursor(row_factory=dict) as cur:
+                    await cur.execute(
+                        """
+                        UPDATE users
+                        SET is_verified = TRUE
+                        WHERE user_id = %s
+                        RETURNING user_id
+                        """,
+                        (user_id,),
+                    )
+                    res = await cur.fetchone()
+                    await conn.commit()
+
+            if not res:
+                return json_response(False, None, "User not found")
+
+            return json_response(True, None, "User verified")
+        except Exception as e:
+            return json_response(False, None, f"Failed to verify user: {str(e)}")
+
+
+    @router.patch("/{user_id}/suspend")
+    async def suspend_user(
+        user_id: int,
+        admin: dict = Depends(require_admin),
+        pool=Depends(get_db_pool),
+    ) -> dict:
+        """Suspend a user account (admin only)."""
+        try:
+            async with pool.connection() as conn:
+                async with conn.cursor(row_factory=dict) as cur:
+                    await cur.execute(
+                        """
+                        UPDATE users
+                        SET is_suspended = TRUE
+                        WHERE user_id = %s
+                        RETURNING user_id
+                        """,
+                        (user_id,),
+                    )
+                    res = await cur.fetchone()
+                    await conn.commit()
+
+            if not res:
+                return json_response(False, None, "User not found")
+
+            return json_response(True, None, "User suspended")
+        except Exception as e:
+            return json_response(False, None, f"Failed to suspend user: {str(e)}")

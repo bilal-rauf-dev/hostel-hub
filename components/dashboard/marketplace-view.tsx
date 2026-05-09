@@ -12,81 +12,97 @@ import {
   ChevronRight,
   ArrowUpRight
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
+import { marketplaceApi } from '@/lib/api'
 
-const CATEGORIES = ['All', 'Food', 'Books', 'Furniture', 'Electronics', 'Services']
+function CreateListingForm({ onDone, onCancel }: { onDone: (success: boolean) => void; onCancel: () => void }) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [category, setCategory] = useState('')
+  const [price, setPrice] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-const PRODUCTS = [
-  {
-    id: 1,
-    title: 'Homemade Thai Curry',
-    price: 6.50,
-    category: 'Food',
-    seller: 'Sarah J.',
-    rating: 4.8,
-    image: 'https://picsum.photos/seed/curry/400/300',
-    time: '20m ago'
-  },
-  {
-    id: 2,
-    title: 'Organic Desk Lamp',
-    price: 15.00,
-    category: 'Furniture',
-    seller: 'Mike R.',
-    rating: 4.5,
-    image: 'https://picsum.photos/seed/lamp/400/300',
-    time: '1h ago'
-  },
-  {
-    id: 3,
-    title: 'Data Structures Textbook',
-    price: 25.00,
-    category: 'Books',
-    seller: 'Academic Source',
-    rating: 5.0,
-    image: 'https://picsum.photos/seed/book/400/300',
-    time: '3h ago'
-  },
-  {
-    id: 4,
-    title: 'iPhone 13 Case (New)',
-    price: 8.00,
-    category: 'Electronics',
-    seller: 'Linh T.',
-    rating: 4.2,
-    image: 'https://picsum.photos/seed/phone/400/300',
-    time: '5h ago'
-  },
-  {
-    id: 5,
-    title: 'Laundry Service',
-    price: 12.00,
-    category: 'Services',
-    seller: 'EcoWash',
-    rating: 4.9,
-    image: 'https://picsum.photos/seed/wash/400/300',
-    time: 'Yesterday'
-  },
-  {
-    id: 6,
-    title: 'Gaming Keyboard',
-    price: 45.00,
-    category: 'Electronics',
-    seller: 'GamersHub',
-    rating: 4.7,
-    image: 'https://picsum.photos/seed/keyboard/400/300',
-    time: '2d ago'
+  const handleSubmit = async (e?: any) => {
+    if (e && e.preventDefault) e.preventDefault()
+    try {
+      setLoading(true)
+      setError(null)
+      const res = await marketplaceApi.createListing(title, description, category, parseFloat(price || '0'))
+      if (res.data?.success) {
+        onDone(true)
+      } else {
+        setError(res.data?.message || 'Failed to create')
+        onDone(false)
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Network error')
+      onDone(false)
+    } finally {
+      setLoading(false)
+    }
   }
-]
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="text-sm font-black">Title</label>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full p-3 rounded-lg border" />
+      </div>
+      <div>
+        <label className="text-sm font-black">Description</label>
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full p-3 rounded-lg border" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Category" className="p-3 rounded-lg border" />
+        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Price" type="number" className="p-3 rounded-lg border" />
+      </div>
+      {error && <div className="text-red-500">{error}</div>}
+      <div className="flex justify-end gap-3">
+        <button type="button" onClick={() => { onCancel(); }} className="px-4 py-2 rounded-xl border">Cancel</button>
+        <button type="submit" disabled={loading} className="px-4 py-2 bg-[#4D5D53] text-white rounded-xl">{loading ? 'Creating...' : 'Create'}</button>
+      </div>
+    </form>
+  )
+}
 
 export function MarketplaceView() {
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [view, setView] = useState<'Market' | 'Orders'>('Market')
+  const [listings, setListings] = useState<any[]>([])
+  const [orders, setOrders] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [search, setSearch] = useState('')
 
-  const filteredProducts = selectedCategory === 'All' 
-    ? PRODUCTS 
-    : PRODUCTS.filter(p => p.category === selectedCategory)
+  useEffect(() => {
+    let mounted = true
+    const load = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const [listRes, ordersRes] = await Promise.all([
+          marketplaceApi.getListings(search, selectedCategory === 'All' ? undefined : selectedCategory),
+          marketplaceApi.getMyOrders(),
+        ])
+        if (!mounted) return
+        if (listRes.data?.success) setListings(listRes.data.data || [])
+        if (ordersRes.data?.success) setOrders(ordersRes.data.data || [])
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load marketplace')
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+    load()
+    return () => { mounted = false }
+  }, [selectedCategory, search])
+
+  const categories = ['All', ...Array.from(new Set(listings.map(l => l.category).filter(Boolean)))]
+
+  const filteredProducts = selectedCategory === 'All' ? listings : listings.filter(p => p.category === selectedCategory)
 
   return (
     <motion.div 
@@ -113,6 +129,16 @@ export function MarketplaceView() {
         </div>
       </div>
 
+      {/* Create Listing Modal */}
+      {creating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-lg">
+            <h4 className="text-lg font-black mb-4">Create Listing</h4>
+            <CreateListingForm onDone={async (success) => { setCreating(false); if (success) { const res = await marketplaceApi.getListings(); if (res.data?.success) setListings(res.data.data || []); } }} onCancel={() => setCreating(false)} />
+          </div>
+        </div>
+      )}
+
       <AnimatePresence mode="wait">
         {view === 'Market' ? (
           <motion.div
@@ -128,6 +154,8 @@ export function MarketplaceView() {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-[#BDBDBD]" />
                 <input 
                   type="text" 
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
                   placeholder="What are you looking for?"
                   className="w-full pl-12 pr-4 py-4 bg-white border border-[#EFEFE9] rounded-2xl outline-none focus:border-[#D4A373] focus:ring-4 focus:ring-[#D4A373]/5 shadow-sm transition-all"
                 />
@@ -135,16 +163,16 @@ export function MarketplaceView() {
               <motion.button 
                 whileHover={{ scale: 1.02, y: -2 }}
                 whileTap={{ scale: 0.98 }}
+                onClick={() => setCreating(true)}
                 className="w-full md:w-auto px-8 py-4 bg-[#4D5D53] text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#4D5D53]/20 hover:bg-[#3D4D43] transition-all"
               >
                 <Plus className="h-5 w-5" />
                 Create Listing
               </motion.button>
             </div>
-
       {/* Categories */}
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-        {CATEGORIES.map((cat, idx) => (
+        {categories.map((cat, idx) => (
           <motion.button
             key={cat}
             initial={{ opacity: 0, y: 10 }}
@@ -221,8 +249,10 @@ export function MarketplaceView() {
                       <Clock className="h-3 w-3" />
                       Limited Stock
                     </div>
-                    <div className="w-10 h-10 bg-[#FAF9F6] rounded-xl flex items-center justify-center text-[#BDBDBD] border border-[#EFEFE9] group-hover:bg-[#D4A373] group-hover:text-white group-hover:border-[#D4A373] group-hover:rotate-12 transition-all duration-500">
-                      <ArrowUpRight className="h-5 w-5" />
+                    <div>
+                      <button onClick={async () => { try { await marketplaceApi.placeOrder(product.listing_id || product.id); alert('Order placed'); } catch (err) { alert('Failed to place order') } }} className="w-10 h-10 bg-[#FAF9F6] rounded-xl flex items-center justify-center text-[#BDBDBD] border border-[#EFEFE9] group-hover:bg-[#D4A373] group-hover:text-white group-hover:border-[#D4A373] group-hover:rotate-12 transition-all duration-500">
+                        <ArrowUpRight className="h-5 w-5" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -252,38 +282,38 @@ export function MarketplaceView() {
             exit={{ opacity: 0, y: -10 }}
             className="space-y-6"
           >
-            {[
-              { id: 'ORD-5521', item: 'Homemade Thai Curry', status: 'Confirmed', date: 'Today', price: '$6.50', color: 'text-blue-500 bg-blue-50' },
-              { id: 'ORD-5490', item: 'Data Structures Textbook', status: 'Delivered', date: 'Oct 25', price: '$25.00', color: 'text-emerald-500 bg-emerald-50' },
-              { id: 'ORD-5481', item: 'iPhone 13 Case', status: 'Ready', date: 'Oct 24', price: '$8.00', color: 'text-orange-500 bg-orange-50' }
-            ].map((order, idx) => (
-              <motion.div 
-                key={order.id} 
-                initial={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
-                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                transition={{ delay: idx * 0.1, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                className="bg-white p-6 rounded-[2.5rem] border border-[#F0F0EE] shadow-sm flex items-center justify-between group hover:shadow-md transition-all cursor-pointer"
-              >
-                <div className="flex items-center gap-6">
-                  <div className="w-16 h-16 bg-[#FAF9F6] rounded-2xl flex items-center justify-center text-[#D4A373] group-hover:rotate-6 transition-all">
-                     <ShoppingBag className="h-8 w-8" />
+            {orders.length === 0 ? (
+              <div className="p-6 text-sm text-[#9A9A9A]">No orders yet.</div>
+            ) : (
+              orders.map((order, idx) => (
+                <motion.div 
+                  key={order.order_id || idx} 
+                  initial={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
+                  animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                  transition={{ delay: idx * 0.1, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                  className="bg-white p-6 rounded-[2.5rem] border border-[#F0F0EE] shadow-sm flex items-center justify-between group hover:shadow-md transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-6">
+                    <div className="w-16 h-16 bg-[#FAF9F6] rounded-2xl flex items-center justify-center text-[#D4A373] group-hover:rotate-6 transition-all">
+                       <ShoppingBag className="h-8 w-8" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black text-[#D4A373] uppercase tracking-widest">{order.order_number || order.order_id}</span>
+                      <h4 className="font-bold text-[#4D5D53] tracking-tight">{order.item_title || order.listing_title || order.item_name}</h4>
+                      <p className="text-[10px] text-[#9A9A9A] font-bold">{order.created_at || order.date} • ${order.total_price ?? order.price}</p>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[10px] font-black text-[#D4A373] uppercase tracking-widest">{order.id}</span>
-                    <h4 className="font-bold text-[#4D5D53] tracking-tight">{order.item}</h4>
-                    <p className="text-[10px] text-[#9A9A9A] font-bold">{order.date} • {order.price}</p>
+                  <div className="flex items-center gap-8">
+                     <div className="text-right hidden sm:block">
+                        <div className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest ${order.status === 'Delivered' ? 'text-emerald-500 bg-emerald-50' : 'text-blue-500 bg-blue-50'}`}>
+                          {order.status}
+                        </div>
+                     </div>
+                     <ArrowUpRight className="h-5 w-5 text-[#BDBDBD] group-hover:text-[#D4A373] group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                   </div>
-                </div>
-                <div className="flex items-center gap-8">
-                   <div className="text-right hidden sm:block">
-                      <div className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest ${order.color}`}>
-                        {order.status}
-                      </div>
-                   </div>
-                   <ArrowUpRight className="h-5 w-5 text-[#BDBDBD] group-hover:text-[#D4A373] group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              ))
+            )}
           </motion.div>
         )}
       </AnimatePresence>

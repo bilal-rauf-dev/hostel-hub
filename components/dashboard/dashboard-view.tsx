@@ -41,6 +41,8 @@ import { StaffTicketsView } from './staff-tickets-view'
 import { VerificationView } from './verification-view'
 import { SafetyAlertsView } from './safety-alerts-view'
 import { AdminSettingsView } from './admin-settings-view'
+import { notificationsApi, authApi } from '@/lib/api'
+import { clearTokens } from '@/lib/auth'
 
 const MENU_ITEMS = [
   { icon: LayoutDashboard, label: 'Overview' },
@@ -53,13 +55,21 @@ const MENU_ITEMS = [
   { icon: Settings, label: 'Settings' },
 ]
 
-export function DashboardView() {
-  const [isAdminMode, setIsAdminMode] = useState(false)
+interface DashboardViewProps {
+  userRole: 'student' | 'admin'
+  onLogout: () => void
+}
+
+export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
+  const isAdminMode = userRole === 'admin'
   const [activeTab, setActiveTab] = useState('Overview')
   const [showNotifications, setShowNotifications] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [toasts, setToasts] = useState<{id: number, msg: string}[]>([])
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationsLoading, setNotificationsLoading] = useState(true)
 
   const addToast = (msg: string) => {
     const id = Date.now() + Math.random()
@@ -69,16 +79,65 @@ export function DashboardView() {
     }, 4000)
   }
 
-  // Simulate a welcome toast
+  // Load notifications on mount
   useEffect(() => {
-    setTimeout(() => addToast('Welcome back to the Resident Hub, Alex!'), 1500)
+    const loadNotifications = async () => {
+      try {
+        setNotificationsLoading(true)
+        const response = await notificationsApi.getNotifications()
+        if (response.data.success) {
+          setNotifications(response.data.data.notifications || [])
+          setUnreadCount(response.data.data.unread_count || 0)
+        }
+      } catch (error) {
+        console.error('Failed to load notifications:', error)
+      } finally {
+        setNotificationsLoading(false)
+      }
+    }
+
+    loadNotifications()
+    // Reload notifications every 30 seconds
+    const interval = setInterval(loadNotifications, 30000)
+    return () => clearInterval(interval)
   }, [])
 
-  const notifications = [
-    { id: 1, title: 'Maintenance Update', desc: 'Ticket #3041 moved to In Progress', time: '5m ago', icon: Wrench, color: 'text-blue-500 bg-blue-50' },
-    { id: 2, title: 'New RSVP', desc: 'Yoga session has 10 new attendees', time: '12m ago', icon: Calendar, color: 'text-emerald-500 bg-emerald-50' },
-    { id: 3, title: 'Marketplace Alert', desc: 'Message about "Homemade Biryani"', time: '1h ago', icon: MessageSquare, color: 'text-orange-500 bg-orange-50' },
-  ]
+  const handleMarkAsRead = async (notification_id: number) => {
+    try {
+      await notificationsApi.markAsRead(notification_id)
+      setNotifications((prev) => prev.filter(n => n.id !== notification_id))
+      setUnreadCount((c) => Math.max(0, c - 1))
+    } catch (err) {
+      console.error('Failed to mark as read', err)
+    }
+  }
+
+  const handleMarkAllRead = async () => {
+    try {
+      await notificationsApi.markAllAsRead()
+      setUnreadCount(0)
+      setNotifications([])
+    } catch (err) {
+      console.error('Failed to mark all as read', err)
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await authApi.logout()
+    } catch (_) {
+      // ignore
+    }
+    clearTokens()
+    onLogout()
+  }
+
+  // Simulate a welcome toast
+  useEffect(() => {
+    setTimeout(() => addToast(`Welcome back to the Hostel Hub!`), 1500)
+  }, [])
+
+  // notifications state is loaded from API (see useEffect above)
 
   return (
     <div className="flex h-screen bg-[#FAF9F6] text-[#4D5D53] overflow-hidden font-sans">
@@ -273,7 +332,11 @@ export function DashboardView() {
                 className={`p-2.5 relative rounded-xl border transition-all group shadow-sm ${showNotifications ? 'bg-[#4D5D53] text-white border-[#4D5D53]' : 'bg-white border-[#EFEFE9] text-[#79837C] hover:bg-[#F4F4F2]'}`}
               >
                 <Bell className="h-5 w-5 transition-transform group-hover:rotate-12" />
-                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-orange-500 rounded-full border-2 border-[#FAF9F6]" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-2.5 right-2.5 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-[8px] font-black border-2 border-white">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
               </motion.button>
 
               <AnimatePresence>
@@ -287,27 +350,34 @@ export function DashboardView() {
                   >
                     <div className="p-5 flex items-center justify-between border-b border-black/5 mb-2">
                        <h4 className="text-[10px] font-black uppercase tracking-widest text-[#4D5D53]">Notifications</h4>
-                       <button className="text-[8px] font-black uppercase tracking-tighter text-[#D4A373] hover:underline">Mark all read</button>
+                       <button onClick={handleMarkAllRead} className="text-[8px] font-black uppercase tracking-tighter text-[#D4A373] hover:underline">Mark all read</button>
                     </div>
                     <div className="space-y-1 p-1">
-                      {notifications.map((notif) => (
-                        <motion.button
-                          key={notif.id}
-                          whileHover={{ x: 4, backgroundColor: 'rgba(255, 255, 255, 0.5)' }}
-                          className="w-full text-left p-3 rounded-2xl flex gap-3 transition-colors group/item"
-                        >
-                          <div className={`p-2.5 rounded-xl ${notif.color} shrink-0 group-hover/item:scale-110 transition-transform`}>
-                            <notif.icon className="h-4 w-4" />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <p className="text-xs font-bold text-[#4D5D53]">{notif.title}</p>
-                              <span className="text-[8px] font-medium text-[#9A9A9A]">{notif.time}</span>
+                      {notificationsLoading ? (
+                        <div className="p-4 text-sm text-[#9A9A9A]">Loading...</div>
+                      ) : notifications.length === 0 ? (
+                        <div className="p-4 text-sm text-[#9A9A9A]">No notifications</div>
+                      ) : (
+                        notifications.map((notif) => (
+                          <motion.button
+                            key={notif.id}
+                            whileHover={{ x: 4, backgroundColor: 'rgba(255, 255, 255, 0.5)' }}
+                            onClick={() => handleMarkAsRead(notif.id)}
+                            className="w-full text-left p-3 rounded-2xl flex gap-3 transition-colors group/item"
+                          >
+                            <div className={`p-2.5 rounded-xl ${notif.color} shrink-0 group-hover/item:scale-110 transition-transform`}>
+                              <notif.icon className="h-4 w-4" />
                             </div>
-                            <p className="text-[10px] text-[#79837C] mt-0.5 line-clamp-1">{notif.desc}</p>
-                          </div>
-                        </motion.button>
-                      ))}
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs font-bold text-[#4D5D53]">{notif.title}</p>
+                                <span className="text-[8px] font-medium text-[#9A9A9A]">{notif.time}</span>
+                              </div>
+                              <p className="text-[10px] text-[#79837C] mt-0.5 line-clamp-1">{notif.desc}</p>
+                            </div>
+                          </motion.button>
+                        ))
+                      )}
                     </div>
                     <button className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-center text-[#9A9A9A] hover:text-[#4D5D53] hover:bg-white/50 transition-all">
                       View all activities
@@ -359,7 +429,6 @@ export function DashboardView() {
                           onClick={() => {
                             setActiveTab(item.tab)
                             setShowAccount(false)
-                            setIsAdminMode(false)
                           }}
                           className="w-full text-left p-3 rounded-2xl flex items-center gap-3 transition-colors group/item"
                         >
@@ -372,26 +441,8 @@ export function DashboardView() {
 
                       <div className="h-[1px] bg-black/5 my-2 mx-2" />
 
-                      <motion.button
-                        whileHover={{ x: 4, backgroundColor: 'rgba(255, 255, 255, 0.8)' }}
-                        onClick={() => {
-                          setIsAdminMode(!isAdminMode)
-                          setShowAccount(false)
-                          setActiveTab('Overview')
-                          addToast(isAdminMode ? 'Switched to Resident Mode' : 'Admin Staff Mode Activated')
-                        }}
-                        className={`w-full text-left p-3 rounded-2xl flex items-center gap-3 transition-colors group/item ${isAdminMode ? 'text-[#D4A373]' : 'text-[#4D5D53]'}`}
-                      >
-                        <div className={`p-2 rounded-lg transition-colors ${isAdminMode ? 'bg-[#FEFAE0] text-[#D4A373]' : 'bg-[#FAF9F6] text-[#BDBDBD] group-hover/item:text-[#D4A373]'}`}>
-                          <ShieldCheck className="h-4 w-4" />
-                        </div>
-                        <p className="text-xs font-bold">{isAdminMode ? 'Resident Mode' : 'Staff Admin'}</p>
-                      </motion.button>
-                    </div>
-
-                    <div className="h-[1px] bg-black/5 my-2 mx-2" />
                     <button 
-                      onClick={() => window.location.reload()}
+                      onClick={handleLogout}
                       className="w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 hover:bg-red-50 transition-colors"
                     >
                        <div className="p-2 rounded-lg bg-red-50 ml-1">

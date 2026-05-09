@@ -12,16 +12,66 @@ import {
   ExternalLink,
   ChevronRight
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { usersApi } from '@/lib/api'
 
-const PENDING_RESIDENTS = [
-  { id: 'R-1001', name: 'James Wilson', email: 'j.wilson@university.edu', block: 'B', room: '401', status: 'Pending', docs: 'ID, Fee Receipt', time: '2h ago' },
-  { id: 'R-1002', name: 'Elena Gilbert', email: 'e.gilbert@university.edu', block: 'A', room: '112', status: 'In Review', docs: 'ID only', time: '5h ago' },
-  { id: 'R-1003', name: 'Klaus Mikaelson', email: 'k.mikaelson@university.edu', block: 'C', room: '205', status: 'Pending', docs: 'Missing documents', time: '1d ago' },
-]
+// loaded from API
 
 export function VerificationView() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [residents, setResidents] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string|null>(null)
+
+  useEffect(()=>{
+    let mounted = true
+    const load = async ()=>{
+      try{
+        setLoading(true)
+        const res = await usersApi.getAllUsers()
+        if (!mounted) return
+        if (res.data?.success) setResidents((res.data.data || []).filter((u:any)=>u.status === 'Pending' || u.verification_status === 'pending'))
+        else setError(res.data?.message || 'Failed to load users')
+      }catch(e:any){ setError(e?.message || 'Network error') }
+      finally{ if (mounted) setLoading(false) }
+    }
+    load()
+    return ()=>{ mounted = false }
+  },[])
+
+  const handleVerify = async (id: number) => {
+    try {
+      setLoading(true)
+      const res = await usersApi.verifyUser(id)
+      if (res.data?.success) {
+        // refresh
+        const r = await usersApi.getAllUsers()
+        if (r.data?.success) setResidents((r.data.data || []).filter((u:any)=>u.status === 'Pending' || u.verification_status === 'pending'))
+        setError(null)
+        alert('User verified')
+      } else {
+        alert(res.data?.message || 'Failed to verify')
+      }
+    } catch (e:any) {
+      alert(e?.message || 'Network error')
+    } finally { setLoading(false) }
+  }
+
+  const handleSuspend = async (id: number) => {
+    try {
+      setLoading(true)
+      const res = await usersApi.suspendUser(id)
+      if (res.data?.success) {
+        const r = await usersApi.getAllUsers()
+        if (r.data?.success) setResidents((r.data.data || []).filter((u:any)=>u.status === 'Pending' || u.verification_status === 'pending'))
+        alert('User suspended')
+      } else {
+        alert(res.data?.message || 'Failed to suspend')
+      }
+    } catch (e:any) {
+      alert(e?.message || 'Network error')
+    } finally { setLoading(false) }
+  }
 
   return (
     <motion.div 
@@ -50,11 +100,11 @@ export function VerificationView() {
         {/* Left Column: List */}
         <div className="xl:col-span-2 space-y-4">
           <div className="flex items-center justify-between px-4">
-             <h4 className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A]">Pending Approvals ({PENDING_RESIDENTS.length})</h4>
+             <h4 className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A]">Pending Approvals ({residents.length})</h4>
              <button className="text-[10px] font-black uppercase tracking-widest text-[#D4A373] hover:underline">Batch Verify</button>
           </div>
           <div className="space-y-3">
-            {PENDING_RESIDENTS.map((resident, idx) => (
+            {residents.map((resident, idx) => (
               <motion.div
                 key={resident.id}
                 initial={{ opacity: 0, x: -20 }}
@@ -65,15 +115,15 @@ export function VerificationView() {
               >
                 <div className="flex items-center gap-6">
                    <div className="w-14 h-14 rounded-2xl bg-[#FAF9F6] flex items-center justify-center text-[#D4A373] font-black group-hover:scale-110 transition-transform">
-                      {resident.name.split(' ').map(n => n[0]).join('')}
+                     {(resident.name || resident.full_name || resident.display_name || 'U').split(' ').map((n:any)=>n[0]).join('')}
                    </div>
                    <div>
                      <h4 className="text-lg font-black text-[#4D5D53] tracking-tight">{resident.name}</h4>
                      <p className="text-xs text-[#9A9A9A] font-bold">{resident.email}</p>
-                     <div className="flex items-center gap-3 mt-2">
-                        <span className="text-[10px] font-black px-2 py-0.5 bg-[#FEFAE0] text-[#D4A373] rounded-lg">Block {resident.block} • {resident.room}</span>
-                        <span className="text-[10px] font-black text-[#BDBDBD] uppercase tracking-widest">• {resident.time}</span>
-                     </div>
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="text-[10px] font-black px-2 py-0.5 bg-[#FEFAE0] text-[#D4A373] rounded-lg">Block {resident.block || resident.block_name || '—'} • {resident.room || resident.room_number || '—'}</span>
+                      <span className="text-[10px] font-black text-[#BDBDBD] uppercase tracking-widest">• {resident.updated_at || resident.time || ''}</span>
+                    </div>
                    </div>
                 </div>
                 
@@ -118,14 +168,14 @@ export function VerificationView() {
 
                  <div className="space-y-4">
                     <p className="text-[10px] font-black text-[#9A9A9A] uppercase tracking-widest px-2">Decision Actions</p>
-                    <button className="w-full py-4 bg-[#4D5D53] text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-[#3D4D43] transition-all shadow-lg shadow-[#4D5D53]/20">
-                       <CheckCircle2 className="h-4 w-4" />
-                       Verify Account
-                    </button>
-                    <button className="w-full py-4 bg-white border border-red-100 text-red-500 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-red-50 transition-all">
-                       <XCircle className="h-4 w-4" />
-                       Reject Docs
-                    </button>
+                      <button onClick={() => selectedId && handleVerify(Number(selectedId))} className="w-full py-4 bg-[#4D5D53] text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-[#3D4D43] transition-all shadow-lg shadow-[#4D5D53]/20">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Verify Account
+                      </button>
+                      <button onClick={() => selectedId && handleSuspend(Number(selectedId))} className="w-full py-4 bg-white border border-red-100 text-red-500 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-red-50 transition-all">
+                        <XCircle className="h-4 w-4" />
+                        Reject Docs
+                      </button>
                  </div>
 
                  <div className="pt-6 border-t border-[#F0F0EE]">

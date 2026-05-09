@@ -14,52 +14,73 @@ import {
   User as UserIcon,
   EyeOff
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { lostFoundApi } from '@/lib/api'
 import Image from 'next/image'
 
-const ITEMS = [
-  {
-    id: 1,
-    title: 'Silver Apple Watch',
-    type: 'Lost',
-    location: 'Gym Area',
-    date: 'Today, 10:00 AM',
-    desc: 'Series 7 with a black sport band. Left it near the treadmills.',
-    image: 'https://picsum.photos/seed/watch2/400/300',
-    anonymous: false,
-    author: 'Alex Rivers',
-    status: 'Open'
-  },
-  {
-    id: 2,
-    title: 'Blue Water Bottle',
-    type: 'Found',
-    location: 'Study Hub B',
-    date: 'Yesterday',
-    desc: 'Hydroflask blue 32oz. Handed it to the reception desk.',
-    image: 'https://picsum.photos/seed/bottle/400/300',
-    anonymous: true,
-    author: 'Anonymous Student',
-    status: 'Open'
-  },
-  {
-    id: 3,
-    title: 'Room Keys (402)',
-    type: 'Lost',
-    location: 'Main Entrance',
-    date: '2 days ago',
-    desc: 'Keys with a "Spiderman" keychain. Very important!',
-    image: null,
-    anonymous: false,
-    author: 'Sarah J.',
-    status: 'Resolved'
-  }
-]
+
 
 export function LostAndFoundView() {
   const [filter, setFilter] = useState('All')
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [reportType, setReportType] = useState<'Lost'|'Found'>('Lost')
+  const [reportTitle, setReportTitle] = useState('')
+  const [reportDesc, setReportDesc] = useState('')
+  const [reportLocation, setReportLocation] = useState('')
+  const [reportDate, setReportDate] = useState('')
+  const [reportAnonymous, setReportAnonymous] = useState(false)
+  const [reportSubmitting, setReportSubmitting] = useState(false)
 
-  const filteredItems = filter === 'All' ? ITEMS : ITEMS.filter(item => item.type === filter)
+  useEffect(() => {
+    let mounted = true
+    const load = async () => {
+      try {
+        setLoading(true)
+        const res = await lostFoundApi.getItems()
+        if (!mounted) return
+        if (res.data?.success) setItems(res.data.data || [])
+        else setError(res.data?.message || 'Failed to load items')
+      } catch (err: any) { setError(err?.message || 'Network error') }
+      finally { if (mounted) setLoading(false) }
+    }
+    load()
+    return () => { mounted = false }
+  }, [])
+
+  const filteredItems = filter === 'All' ? items : items.filter(item => item.type === filter)
+
+  const handleReport = async () => {
+    setShowReportModal(true)
+  }
+
+  const submitReport = async () => {
+    try {
+      setReportSubmitting(true)
+      await lostFoundApi.postItem({
+        item_type: reportType,
+        description: reportDesc,
+        location_tag: reportLocation,
+        item_date: reportDate,
+        is_anonymous: reportAnonymous,
+        title: reportTitle || undefined,
+      })
+      // refresh
+      const res = await lostFoundApi.getItems()
+      if (res.data?.success) setItems(res.data.data || [])
+      setShowReportModal(false)
+      // reset
+      setReportTitle('')
+      setReportDesc('')
+      setReportLocation('')
+      setReportDate('')
+      setReportAnonymous(false)
+      alert('Report submitted')
+    } catch (e) { console.error(e); alert('Failed to submit report') }
+    finally { setReportSubmitting(false) }
+  }
 
   return (
     <motion.div 
@@ -76,6 +97,7 @@ export function LostAndFoundView() {
         <motion.button 
           whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
+          onClick={handleReport}
           className="px-6 py-3 bg-[#D4A373] text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-[#D4A373]/20"
         >
           <Plus className="h-4 w-4" />
@@ -199,6 +221,28 @@ export function LostAndFoundView() {
         </div>
         <Tag className="absolute -right-5 -bottom-5 h-32 w-32 text-white/5 -rotate-12" />
       </div>
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-xl">
+            <h4 className="text-lg font-black mb-4">Report Item</h4>
+            <div className="grid grid-cols-1 gap-3">
+              <div className="flex gap-2">
+                <button onClick={()=>setReportType('Lost')} className={`flex-1 py-2 rounded-md ${reportType==='Lost'?'bg-[#D4A373] text-white':'bg-[#FAF9F6]'}`}>Lost</button>
+                <button onClick={()=>setReportType('Found')} className={`flex-1 py-2 rounded-md ${reportType==='Found'?'bg-[#D4A373] text-white':'bg-[#FAF9F6]'}`}>Found</button>
+              </div>
+              <input value={reportTitle} onChange={e=>setReportTitle(e.target.value)} placeholder="Title (optional)" className="p-3 border rounded-md" />
+              <textarea value={reportDesc} onChange={e=>setReportDesc(e.target.value)} placeholder="Description" className="p-3 border rounded-md h-28" />
+              <input value={reportLocation} onChange={e=>setReportLocation(e.target.value)} placeholder="Location tag" className="p-3 border rounded-md" />
+              <input value={reportDate} onChange={e=>setReportDate(e.target.value)} placeholder="Date (YYYY-MM-DD)" className="p-3 border rounded-md" />
+              <label className="flex items-center gap-2"><input type="checkbox" checked={reportAnonymous} onChange={e=>setReportAnonymous(e.target.checked)} /> Report anonymously</label>
+            </div>
+            <div className="flex justify-end gap-3 mt-4">
+              <button onClick={()=>setShowReportModal(false)} className="px-4 py-2 border rounded-md">Cancel</button>
+              <button onClick={submitReport} disabled={reportSubmitting} className="px-4 py-2 bg-[#4D5D53] text-white rounded-md">{reportSubmitting? 'Submitting...':'Submit'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   )
 }

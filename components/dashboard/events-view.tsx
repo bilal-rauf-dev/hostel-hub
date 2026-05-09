@@ -12,46 +12,72 @@ import {
   ArrowRight
 } from 'lucide-react'
 import Image from 'next/image'
-
-const CATEGORIES = ['All', 'Social', 'Workshops', 'Sports', 'Trips']
-
-const EVENTS = [
-  {
-    id: 1,
-    title: 'Yoga in the Secret Garden',
-    date: 'Tomorrow',
-    time: '8:00 AM - 9:30 AM',
-    location: 'Building B Courtyard',
-    attendees: '24 going',
-    category: 'Social',
-    image: 'https://picsum.photos/seed/yoga/800/400',
-    color: 'bg-emerald-500'
-  },
-  {
-    id: 2,
-    title: 'Community Pizza Night',
-    date: 'Friday, Oct 29',
-    time: '7:00 PM - 10:00 PM',
-    location: 'Main Lounge',
-    attendees: '56 going',
-    category: 'Social',
-    image: 'https://picsum.photos/seed/pizza/800/400',
-    color: 'bg-orange-500'
-  },
-  {
-    id: 3,
-    title: 'Resume Workshop',
-    date: 'Saturday, Oct 30',
-    time: '2:00 PM - 4:00 PM',
-    location: 'Study Hub A',
-    attendees: '15 going',
-    category: 'Workshops',
-    image: 'https://picsum.photos/seed/workshop/800/400',
-    color: 'bg-blue-500'
-  }
-]
+import { useState, useEffect } from 'react'
+import { eventsApi } from '@/lib/api'
 
 export function EventsView() {
+  const [events, setEvents] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState('All')
+
+  useEffect(() => {
+    let mounted = true
+    const load = async () => {
+      try {
+        setLoading(true)
+        const res = await eventsApi.getEvents()
+        if (!mounted) return
+        if (res.data?.success) setEvents(res.data.data || [])
+        else setError(res.data?.message || 'Failed to load events')
+      } catch (err: any) {
+        setError(err?.message || 'Network error')
+      } finally { if (mounted) setLoading(false) }
+    }
+    load()
+    return () => { mounted = false }
+  }, [])
+
+  const categories = ['All', ...Array.from(new Set(events.map(e => e.category).filter(Boolean)))]
+
+  const handleRsvp = async (event_id: number) => {
+    try {
+      await eventsApi.rsvpEvent(event_id, 'going')
+      alert('RSVP saved')
+    } catch (err) { alert('Failed to RSVP') }
+  }
+
+  function CreateEventForm({ onDone, onCancel }: { onDone: (s:boolean)=>void, onCancel: ()=>void }){
+    const [title, setTitle] = useState('')
+    const [date, setDate] = useState('')
+    const [time, setTime] = useState('')
+    const [location, setLocation] = useState('')
+    const [submitting, setSubmitting] = useState(false)
+    const submit = async () => {
+      try {
+        setSubmitting(true)
+        await eventsApi.createEvent({ title, date, time, location })
+        onDone(true)
+      } catch (e) { onDone(false) }
+      finally { setSubmitting(false) }
+    }
+    return (
+      <div>
+        <div className="grid grid-cols-1 gap-3">
+          <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Title" className="p-3 border rounded-md" />
+          <input value={date} onChange={e=>setDate(e.target.value)} placeholder="Date" className="p-3 border rounded-md" />
+          <input value={time} onChange={e=>setTime(e.target.value)} placeholder="Time" className="p-3 border rounded-md" />
+          <input value={location} onChange={e=>setLocation(e.target.value)} placeholder="Location" className="p-3 border rounded-md" />
+        </div>
+        <div className="flex justify-end gap-3 mt-4">
+          <button onClick={onCancel} className="px-4 py-2 border rounded-md">Cancel</button>
+          <button onClick={submit} disabled={submitting} className="px-4 py-2 bg-[#4D5D53] text-white rounded-md">{submitting? 'Saving...':'Save'}</button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <motion.div 
       initial={{ opacity: 0, x: 20 }}
@@ -72,16 +98,15 @@ export function EventsView() {
       </div>
 
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-        {CATEGORIES.map((cat, idx) => (
+        {categories.map((cat, idx) => (
           <motion.button
             key={cat}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.05 }}
+            onClick={() => setSelectedCategory(cat)}
             className={`px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-[0.15em] border-2 transition-all ${
-              idx === 0
-              ? 'bg-[#E9EDC9] border-[#E9EDC9] text-[#4D5D53]'
-              : 'bg-white border-[#F0F0EE] text-[#9A9A9A]'
+              selectedCategory === cat ? 'bg-[#E9EDC9] border-[#E9EDC9] text-[#4D5D53]' : 'bg-white border-[#F0F0EE] text-[#9A9A9A]'
             }`}
           >
             {cat}
@@ -90,7 +115,7 @@ export function EventsView() {
       </div>
 
       <div className="space-y-10">
-        {EVENTS.map((event, idx) => (
+        {(events.filter(e => selectedCategory === 'All' || e.category === selectedCategory)).map((event, idx) => (
           <motion.div
             key={event.id}
             initial={{ opacity: 0, x: -30, filter: 'blur(10px)' }}
@@ -151,6 +176,7 @@ export function EventsView() {
                  <motion.button 
                    whileHover={{ x: 8, scale: 1.02 }}
                    whileTap={{ scale: 0.98 }}
+                   onClick={() => handleRsvp(event.event_id || event.id)}
                    className="w-full sm:w-auto px-10 py-5 bg-[#4D5D53] text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#3D4D43] transition-all flex items-center justify-center gap-4 shadow-2xl shadow-[#4D5D53]/20"
                  >
                    Join Event <ArrowRight className="h-4 w-4" />
@@ -160,6 +186,16 @@ export function EventsView() {
           </motion.div>
         ))}
       </div>
+
+      {/* Create Event Modal */}
+      {creating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-xl">
+            <h4 className="text-lg font-bold mb-4">Create Event</h4>
+            <CreateEventForm onDone={async (success: boolean) => { setCreating(false); if (success) { const res = await eventsApi.getEvents(); if (res.data?.success) setEvents(res.data.data || []) } }} onCancel={() => setCreating(false)} />
+          </div>
+        </div>
+      )}
     </motion.div>
   )
 }
