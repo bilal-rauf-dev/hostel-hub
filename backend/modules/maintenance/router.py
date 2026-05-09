@@ -17,10 +17,8 @@ def json_response(success: bool, data: Any = None, message: str = "") -> dict:
 
 
 class CreateTicketRequest(BaseModel):
-    title: str
     description: str
     category: str
-    priority: str
     room_number: str
 
 
@@ -45,17 +43,15 @@ async def create_ticket(
                 await cur.execute(
                     """
                     INSERT INTO maintenance_tickets
-                    (student_id, title, description, category, priority, room_number, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'pending')
-                    RETURNING ticket_id, student_id, title, description, category,
-                              priority, room_number, status, created_at
+                    (student_id, description, category, room_number, status)
+                    VALUES (%s, %s, %s, %s, 'submitted')
+                    RETURNING ticket_id, student_id, description, category,
+                    room_number, status, created_at
                     """,
                     (
                         user["user_id"],
-                        request_body.title,
                         request_body.description,
                         request_body.category,
-                        request_body.priority,
                         request_body.room_number,
                     ),
                 )

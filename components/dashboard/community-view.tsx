@@ -30,6 +30,8 @@ export function CommunityView() {
   const [question, setQuestion] = useState('')
   const [options, setOptions] = useState<string[]>(['', ''])
   const [deadline, setDeadline] = useState('')
+  const [userVotes, setUserVotes] = useState<{ [key: number]: number }>({}) // poll_id -> option_id
+  const [pollResults, setPollResults] = useState<{ [key: number]: any[] }>({}) // poll_id -> results
 
   const pushToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type })
@@ -42,9 +44,26 @@ export function CommunityView() {
       try {
         setLoading(true)
         const res = await pollsApi.getPolls()
+        console.log('Polls response:', res.data)
         if (!mounted) return
-        if (res.data?.success) setPolls(res.data.data || [])
-        else setError(res.data?.message || 'Failed to load polls')
+        if (res.data?.success) {
+          setPolls(res.data.data || [])
+          // Load results for each poll
+          const allResults: { [key: number]: any[] } = {}
+          for (const poll of res.data.data || []) {
+            try {
+              const resultsRes = await pollsApi.getPollResults(poll.poll_id)
+              if (resultsRes.data?.success) {
+                allResults[poll.poll_id] = resultsRes.data.data
+              }
+            } catch (e) {
+              // silently fail on individual poll result loads
+            }
+          }
+          setPollResults(allResults)
+        } else {
+          setError(res.data?.message || 'Failed to load polls')
+        }
       } catch (err: any) {
         setError(err?.message || 'Network error')
       } finally {
@@ -224,23 +243,61 @@ export function CommunityView() {
                     <BarChart3 className="h-4 w-4" /> Active Community Poll
                   </div>
                   <h4 className="text-2xl font-black text-[#4D5D53] tracking-tighter mb-8 leading-tight">{poll.question}</h4>
+                  {(poll.options || []).length === 0 ? (
+                    <div className="text-center py-4 text-sm text-[#9A9A9A]">No options available</div>
+                  ) : (
                   <div className="space-y-5">
                     {(poll.options || []).map((option: any) => {
-                      const total = poll.total_votes || poll.totalVotes || (poll.options || []).reduce((s:any,o:any)=>s+(o.votes||0),0)
-                      const votes = option.votes || option.vote_count || 0
-                      const percentage = total > 0 ? Math.round((votes / total) * 100) : 0
+                      const results = pollResults[poll.poll_id] || []
+                      const optionResult = results.find((r: any) => r.option_id === option.option_id)
+                      const percentage = optionResult?.percentage || 0
+                      const votes = optionResult?.vote_count || 0
+                      const userVoted = userVotes[poll.poll_id] === option.option_id
+                      
                       return (
-                        <button key={option.id || option.text} onClick={async ()=>{ try { await pollsApi.castVote(poll.poll_id || poll.id, option.id || option.option_id || option.index); const res = await pollsApi.getPollResults(poll.poll_id || poll.id); if (res.data?.success) { /* update poll options locally */ } } catch(e){ console.error(e) } }} className="w-full relative group/opt outline-none">
+                        <button 
+                          key={option.option_id} 
+                          onClick={async () => {
+                          try {
+                            const res = await pollsApi.castVote(poll.poll_id, option.option_id)
+                            if (res.data?.success) {
+                              setUserVotes(prev => ({ ...prev, [poll.poll_id]: option.option_id }))
+                              const resultsRes = await pollsApi.getPollResults(poll.poll_id)
+                              if (resultsRes.data?.success) {
+                                setPollResults(prev => ({ ...prev, [poll.poll_id]: resultsRes.data.data }))
+                              }
+                              pushToast('Vote recorded', 'success')
+                            } else {
+                              const msg = res.data?.message || ''
+                              if (msg.toLowerCase().includes('already voted')) {
+                                setUserVotes(prev => ({ ...prev, [poll.poll_id]: option.option_id }))
+                                pushToast('You have already voted in this poll', 'error')
+                              } else {
+                                pushToast(msg || 'Failed to vote', 'error')
+                              }
+                            }
+                          } catch (e: any) {
+                            const msg = e?.response?.data?.message || e?.message || 'Failed to vote'
+                            if (msg.toLowerCase().includes('already voted')) {
+                              setUserVotes(prev => ({ ...prev, [poll.poll_id]: option.option_id }))
+                              pushToast('You have already voted in this poll', 'error')
+                            } else {
+                              pushToast(msg, 'error')
+                            }
+                          }
+                        }}
+                          className="w-full relative group/opt outline-none"
+                        >
                           <div className="flex justify-between items-center mb-2 px-1">
-                            <span className="text-sm font-black text-[#4D5D53] tracking-tight">{option.text || option.label}</span>
-                            <span className="text-[10px] font-black text-[#D4A373] tabular-nums uppercase tracking-widest">{percentage}% ({votes} votes)</span>
+                            <span className={`text-sm font-black tracking-tight ${userVoted ? 'text-[#4D5D53]' : 'text-[#4D5D53]'}`}>{option.option_text}</span>
+                            <span className="text-[10px] font-black text-[#D4A373] tabular-nums uppercase tracking-widest">{Math.round(percentage)}% ({votes} votes)</span>
                           </div>
                           <div className="h-4 bg-[#FAF9F6] rounded-full overflow-hidden border border-[#F0F0EE] relative">
                             <motion.div 
                               initial={{ width: 0 }}
                               animate={{ width: `${percentage}%` }}
                               transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
-                              className="h-full bg-[#E9EDC9] rounded-full group-hover/opt:bg-[#D4A373]/20 transition-colors z-10 relative"
+                              className={`h-full rounded-full group-hover/opt:opacity-80 transition-all z-10 relative ${userVoted ? 'bg-[#D4A373]' : 'bg-[#E9EDC9]'}`}
                             />
                             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
                           </div>
@@ -248,11 +305,19 @@ export function CommunityView() {
                       )
                     })}
                   </div>
+                  )}
                   <div className="flex items-center justify-between mt-10 pt-8 border-t border-[#F0F0EE]">
                      <p className="text-[11px] text-[#9A9A9A] font-bold uppercase tracking-wide">{poll.total_votes || poll.totalVotes || 0} student responses • {poll.deadline || ''}</p>
-                     <button className="text-[10px] font-black uppercase tracking-widest text-[#4D5D53] hover:text-[#D4A373] transition-colors flex items-center gap-2">
-                       Vote Now <ChevronRight className="h-3 w-3" />
-                     </button>
+                     {!userVotes[poll.poll_id] && (
+                    <button className="text-[10px] font-black uppercase tracking-widest text-[#4D5D53] hover:text-[#D4A373] transition-colors flex items-center gap-2">
+                      Vote Now <ChevronRight className="h-3 w-3" />
+                    </button>
+                    )}
+                    {userVotes[poll.poll_id] && (
+                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">
+                        ✓ Voted
+                      </span>
+                    )}
                   </div>
                 </motion.div>
               ))}

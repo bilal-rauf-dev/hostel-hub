@@ -15,6 +15,7 @@ import Image from 'next/image'
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { eventsApi } from '@/lib/api'
+import { isAdmin } from '@/lib/auth'
 
 export function EventsView() {
   const [events, setEvents] = useState<any[]>([])
@@ -65,10 +66,16 @@ export function EventsView() {
       try {
         setSubmitting(true)
         const eventDate = date && time ? `${date}T${time}` : date || time || ''
-        await eventsApi.createEvent(title, '', location, eventDate)
+        const res = await eventsApi.createEvent(title, '', location, eventDate)
         onDone(true)
         pushToast('Event created', 'success')
-      } catch (e) { onDone(false); pushToast('Failed to create event', 'error') }
+      } catch (e: any) {
+        const errorMsg = e?.response?.status === 403 
+          ? 'Only admins can create events'
+          : e?.response?.data?.message || 'Failed to create event'
+        onDone(false)
+        pushToast(errorMsg, 'error')
+      }
       finally { setSubmitting(false) }
     }
     return (
@@ -96,14 +103,15 @@ export function EventsView() {
     >
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
         <h3 className="text-2xl font-black text-[#4D5D53] tracking-tight">Events Calendar</h3>
-        <motion.button 
+        {isAdmin() && <motion.button 
           whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
+          onClick={() => setCreating(true)}
           className="px-6 py-3 bg-[#D4A373] text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-[#D4A373]/20"
         >
           <Plus className="h-4 w-4" />
           Organize Event
-        </motion.button>
+        </motion.button>}
       </div>
 
       {toast && (
@@ -130,9 +138,14 @@ export function EventsView() {
       </div>
 
       <div className="space-y-10">
-        {(events.filter(e => selectedCategory === 'All' || e.category === selectedCategory)).map((event, idx) => (
+        {(events.filter(e => selectedCategory === 'All' || e.category === selectedCategory)).map((event, idx) => {
+          const eventDate = new Date(event.event_date)
+          const dateStr = eventDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+          const timeStr = eventDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+          
+          return (
           <motion.div
-            key={event.id}
+            key={event.event_id}
             initial={{ opacity: 0, x: -30, filter: 'blur(10px)' }}
             animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
             transition={{ delay: 0.1 + (idx * 0.15), duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
@@ -140,7 +153,7 @@ export function EventsView() {
           >
             <div className="w-full lg:w-96 h-72 lg:h-auto relative overflow-hidden shrink-0">
                <Image 
-                 src={event.image} 
+                 src={event.image || `https://picsum.photos/seed/event${event.event_id || event.id}/400/300`}
                  alt={event.title}
                  fill
                  className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
@@ -148,7 +161,7 @@ export function EventsView() {
                />
                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent lg:hidden" />
                <div className="absolute top-8 left-8 px-5 py-2 bg-white/90 backdrop-blur-xl rounded-full border border-white/50 text-[10px] font-black uppercase tracking-[0.2em] text-[#4D5D53] transform transition-transform group-hover:scale-110 group-hover:bg-[#E9EDC9]">
-                 {event.category}
+                 {event.category || 'General'}
                </div>
             </div>
 
@@ -160,7 +173,7 @@ export function EventsView() {
                   className="flex items-center gap-4 text-[#D4A373] text-[10px] font-black uppercase tracking-[0.3em] mb-6"
                 >
                   <Calendar className="h-4 w-4" />
-                   {event.date} • {event.time}
+                   {dateStr} • {timeStr}
                 </motion.div>
                 <h4 className="text-3xl lg:text-4xl font-black text-[#4D5D53] tracking-tighter mb-6 group-hover:text-[#D4A373] transition-colors duration-500 leading-tight">{event.title}</h4>
                 <div className="flex flex-wrap gap-10 text-[#79837C]">
@@ -168,7 +181,7 @@ export function EventsView() {
                      <div className="p-2 bg-[#FAF9F6] rounded-lg group-hover:bg-[#FEFAE0] transition-colors"><MapPin className="h-4 w-4" /></div> {event.location}
                    </div>
                    <div className="flex items-center gap-3 text-sm font-bold tracking-tight">
-                     <div className="p-2 bg-[#FAF9F6] rounded-lg group-hover:bg-[#FEFAE0] transition-colors"><Users className="h-4 w-4" /></div> {event.attendees}
+                     <div className="p-2 bg-[#FAF9F6] rounded-lg group-hover:bg-[#FEFAE0] transition-colors"><Users className="h-4 w-4" /></div> {event.attendees || '0'}
                    </div>
                 </div>
               </div>
@@ -177,7 +190,7 @@ export function EventsView() {
                  <div className="flex -space-x-4">
                    {[1, 2, 3, 4].map(i => (
                      <motion.div 
-                       key={`${event.id}-avatar-${i}`} 
+                       key={`${event.event_id || event.id}-avatar-${i}`}
                        whileHover={{ y: -4, zIndex: 10 }}
                        className="w-12 h-12 rounded-full border-4 border-white bg-[#F4F4F2] overflow-hidden shadow-sm cursor-pointer transition-transform"
                      >
@@ -199,7 +212,8 @@ export function EventsView() {
               </div>
             </div>
           </motion.div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Create Event Modal */}

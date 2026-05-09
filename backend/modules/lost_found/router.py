@@ -38,7 +38,7 @@ async def get_lost_found_items(
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
-                    SELECT lf.item_id, lf.item_type, lf.description, lf.location_tag,
+                    SELECT lf.item_id, lf.item_type, lf.title, lf.description, lf.location_tag,
                            lf.item_date, lf.image_url, lf.is_anonymous, lf.is_archived,
                            CASE WHEN is_anonymous = TRUE THEN NULL ELSE posted_by END as reporter,
                            CASE WHEN is_anonymous = TRUE THEN 'Anonymous' ELSE u.display_name END as reporter_name
@@ -55,7 +55,7 @@ async def get_lost_found_items(
             normalized_items.append(
                 {
                     **item,
-                    "title": item["description"],
+                    "title": item.get("title") or item["description"],
                     "location": item["location_tag"],
                     "posted_date": item["item_date"],
                 }
@@ -81,14 +81,15 @@ async def post_lost_found_item(
                 await cur.execute(
                     """
                     INSERT INTO lost_found_items
-                    (item_type, description, location_tag, item_date, posted_by, is_anonymous, image_url)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    RETURNING item_id, item_type, description, location_tag,
+                    (item_type, title, description, location_tag, item_date, posted_by, is_anonymous, image_url)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING item_id, item_type, title, description, location_tag,
                               item_date, posted_by, is_anonymous, image_url
                     """,
                     (
                         request_body.item_type,
                         request_body.description,
+                        request_body.title,
                         location_tag,
                         request_body.item_date,
                         user["user_id"],
@@ -102,7 +103,7 @@ async def post_lost_found_item(
         if item:
             item = {
                 **item,
-                "title": title,
+                "title": item.get("title") or item["description"],
                 "location": location_tag,
                 "posted_date": item["item_date"],
             }

@@ -30,7 +30,7 @@ async def get_polls(
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
-    """Get active polls (where deadline > NOW())."""
+    """Get active polls with options (where deadline > NOW())."""
     try:
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
@@ -43,8 +43,26 @@ async def get_polls(
                     """
                 )
                 polls = await cur.fetchall()
+                
+                # Fetch options for each poll
+                polls_with_options = []
+                for poll in polls:
+                    await cur.execute(
+                        """
+                        SELECT option_id, option_text, display_order
+                        FROM poll_options
+                        WHERE poll_id = %s
+                        ORDER BY display_order ASC
+                        """,
+                        (poll["poll_id"],),
+                    )
+                    options = await cur.fetchall()
+                    polls_with_options.append({
+                        **poll,
+                        "options": options
+                    })
         
-        return json_response(True, polls, "Polls retrieved successfully")
+        return json_response(True, polls_with_options, "Polls retrieved successfully")
     except Exception as e:
         return json_response(False, None, f"Failed to retrieve polls: {str(e)}")
 
@@ -119,13 +137,15 @@ async def cast_vote(
                     # function signature: (p_poll_id INT, p_user_id INT, p_option_id INT)
                     (poll_id, user["user_id"], request_body.option_id),
                 )
+                print("Cast vote params:", poll_id, user["user_id"], request_body.option_id)
                 result = await cur.fetchone()
                 await conn.commit()
         
-        if result and result.get("vote_id"):
-            return json_response(True, result, "Vote cast successfully")
+        if result and result.get("cast_vote") == "SUCCESS":
+            return json_response(True, None, "Vote cast successfully")
         else:
-            return json_response(False, None, "Failed to cast vote")
+            msg = result.get("cast_vote") if result else "Failed to cast vote"
+            return json_response(False, None, msg)
     except psycopg.errors.ForeignKeyViolation:
         return json_response(False, None, "Poll or option not found")
     except Exception as e:

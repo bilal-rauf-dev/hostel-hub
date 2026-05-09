@@ -654,52 +654,42 @@ RETURNS TABLE(order_id INT, result TEXT)
 LANGUAGE plpgsql
 AS $$
 DECLARE
+  v_order_id INT;
   v_seller_id INT;
-  v_available_quantity INT;
-  v_listing_status listing_status;
-  v_new_order_id INT;
+  v_available INT;
 BEGIN
-  BEGIN
-    IF p_quantity IS NULL OR p_quantity <= 0 THEN
-      RAISE EXCEPTION 'Order quantity must be greater than zero';
-    END IF;
+  SELECT seller_id, quantity INTO v_seller_id, v_available
+  FROM marketplace_listings
+  WHERE listing_id = p_listing_id AND status = 'active';
 
-    SELECT seller_id, quantity, status
-    INTO v_seller_id, v_available_quantity, v_listing_status
-    FROM marketplace_listings
-    WHERE listing_id = p_listing_id
-    FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT NULL::INT, 'Listing not found or inactive';
+    RETURN;
+  END IF;
 
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'Marketplace listing not found';
-    END IF;
+  IF v_seller_id = p_buyer_id THEN
+    RETURN QUERY SELECT NULL::INT, 'Seller cannot place an order on their own listing';
+    RETURN;
+  END IF;
 
-    IF v_listing_status <> 'active' THEN
-      RAISE EXCEPTION 'Listing is not active';
-    END IF;
+  IF p_quantity > v_available THEN
+    RETURN QUERY SELECT NULL::INT, 'Insufficient quantity available';
+    RETURN;
+  END IF;
 
-    IF v_seller_id = p_buyer_id THEN
-      RAISE EXCEPTION 'Seller cannot place an order on their own listing';
-    END IF;
+  INSERT INTO marketplace_orders (listing_id, buyer_id, quantity, status)
+  VALUES (p_listing_id, p_buyer_id, p_quantity, 'pending')
+  RETURNING marketplace_orders.order_id INTO v_order_id;
 
-    IF p_quantity > COALESCE(v_available_quantity, 0) THEN
-      RAISE EXCEPTION 'Requested quantity exceeds available stock';
-    END IF;
+  UPDATE marketplace_listings
+  SET quantity = quantity - p_quantity,
+      status = CASE WHEN quantity - p_quantity <= 0 THEN 'sold' ELSE status END
+  WHERE listing_id = p_listing_id;
 
-    INSERT INTO marketplace_orders (listing_id, buyer_id, quantity, status)
-    VALUES (p_listing_id, p_buyer_id, p_quantity, 'pending')
-    RETURNING order_id INTO v_new_order_id;
-
-    UPDATE marketplace_listings
-    SET quantity = quantity - p_quantity,
-        status = CASE WHEN quantity - p_quantity <= 0 THEN 'sold' ELSE status END
-    WHERE listing_id = p_listing_id;
-
-    RETURN QUERY SELECT v_new_order_id, 'SUCCESS';
-  EXCEPTION
-    WHEN OTHERS THEN
-      RETURN QUERY SELECT NULL::INT, SQLERRM;
-  END;
+  RETURN QUERY SELECT v_order_id, 'SUCCESS'::TEXT;
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN QUERY SELECT NULL::INT, SQLERRM;
 END;
 $$;
 

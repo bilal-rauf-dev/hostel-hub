@@ -359,21 +359,23 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                       ) : (
                         notifications.map((notif) => (
                           <motion.button
-                            key={notif.id}
+                            key={notif.notification_id || notif.id}
                             whileHover={{ x: 4, backgroundColor: 'rgba(255, 255, 255, 0.5)' }}
                             onClick={() => handleMarkAsRead(notif.id)}
                             className="w-full text-left p-3 rounded-2xl flex gap-3 transition-colors group/item"
                           >
-                            <div className={`p-2.5 rounded-xl ${notif.color} shrink-0 group-hover/item:scale-110 transition-transform`}>
-                              <notif.icon className="h-4 w-4" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between">
-                                <p className="text-xs font-bold text-[#4D5D53]">{notif.title}</p>
-                                <span className="text-[8px] font-medium text-[#9A9A9A]">{notif.time}</span>
+                            <div className="p-2.5 rounded-xl bg-[#FEFAE0] text-[#D4A373] shrink-0 group-hover/item:scale-110 transition-transform">
+                            <Bell className="h-4 w-4" />
                               </div>
-                              <p className="text-[10px] text-[#79837C] mt-0.5 line-clamp-1">{notif.desc}</p>
-                            </div>
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-bold text-[#4D5D53]">{notif.title}</p>
+                                  <span className="text-[8px] font-medium text-[#9A9A9A]">
+                                    {notif.created_at ? new Date(notif.created_at).toLocaleDateString() : ''}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-[#79837C] mt-0.5 line-clamp-1">{notif.body}</p>
+                              </div>
                           </motion.button>
                         ))
                       )}
@@ -470,7 +472,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                 exit={{ opacity: 0, x: -30, filter: 'blur(10px)' }}
                 transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
               >
-                {activeTab === 'Overview' && <OverviewView />}
+                {activeTab === 'Overview' && <OverviewView onNavigate={setActiveTab} />}
                 {activeTab === 'Marketplace' && <MarketplaceView />}
                 {activeTab === 'Tickets' && <TicketsView />}
                 {activeTab === 'Events' && <EventsView />}

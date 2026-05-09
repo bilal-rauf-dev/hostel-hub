@@ -78,8 +78,8 @@ async def get_listings(
                 await cur.execute(
                     f"""
                     SELECT ml.listing_id, ml.seller_id, ml.title, ml.description,
-                           ml.category, ml.price, ml.status,
-                           ml.created_at
+                    ml.category, ml.price, ml.status, ml.quantity,
+                    ml.created_at, u.display_name AS seller_display_name
                     FROM marketplace_listings ml
                     JOIN users u ON ml.seller_id = u.user_id
                     WHERE {where_clause}
@@ -246,24 +246,25 @@ async def place_order(
     try:
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
-                                # Call stored procedure: SELECT * FROM place_order($1, $2, $3)
-                                await cur.execute(
-                                        """
-                                        SELECT * FROM place_order(
-                                            %s,
-                                            %s,
-                                            %s
-                                        )
-                                        """,
-                                        (listing_id, user["user_id"], request_body.quantity),
-                                )
-                                result = await cur.fetchone()
-                                await conn.commit()
+                # Call stored procedure: SELECT * FROM place_order($1, $2, $3)
+                await cur.execute(
+                        """
+                        SELECT * FROM place_order(
+                            %s,
+                            %s,
+                            %s
+                        )
+                        """,
+                        (listing_id, user["user_id"], request_body.quantity),
+                )
+                print("Place order params:", listing_id, user["user_id"], request_body.quantity)
+                result = await cur.fetchone()
+                await conn.commit()
 
         if result and result.get("order_id"):
             return json_response(True, result, "Order placed successfully")
         else:
-            return json_response(False, None, "Failed to place order")
+            return json_response(False, None, str(result))
     except psycopg.errors.ForeignKeyViolation:
         return json_response(False, None, "Listing not found")
     except Exception as e:
@@ -326,19 +327,19 @@ async def get_my_orders(
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
-    """Get current user's marketplace orders."""
+    """Get current user's marketplace orders with complete details."""
     try:
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
-                    SELECT mo.order_id, mo.buyer_id, mo.seller_id, mo.listing_id,
-                           mo.status, mo.created_at, mo.updated_at,
-                           ml.title as listing_title, ml.price,
-                           u.display_name as seller_name
+                    SELECT mo.order_id, mo.buyer_id, mo.quantity, mo.status, mo.created_at,
+                    ml.title AS item_title, ml.price,
+                    (mo.quantity * ml.price) AS total_price,
+                    u.display_name AS seller_display_name
                     FROM marketplace_orders mo
                     JOIN marketplace_listings ml ON mo.listing_id = ml.listing_id
-                    JOIN users u ON mo.seller_id = u.user_id
+                    JOIN users u ON ml.seller_id = u.user_id
                     WHERE mo.buyer_id = %s
                     ORDER BY mo.created_at DESC
                     """,
@@ -349,3 +350,31 @@ async def get_my_orders(
         return json_response(True, orders, "Orders retrieved successfully")
     except Exception as e:
         return json_response(False, None, f"Failed to retrieve orders: {str(e)}")
+
+@router.get("/orders/received")
+async def get_received_orders(
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Get orders received by the current user as a seller."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    """
+                    SELECT mo.order_id, mo.buyer_id, mo.quantity, mo.status, mo.created_at,
+                           ml.title AS item_title, ml.price, ml.listing_id,
+                           (mo.quantity * ml.price) AS total_price,
+                           u.display_name AS buyer_display_name
+                    FROM marketplace_orders mo
+                    JOIN marketplace_listings ml ON mo.listing_id = ml.listing_id
+                    JOIN users u ON mo.buyer_id = u.user_id
+                    WHERE ml.seller_id = %s
+                    ORDER BY mo.created_at DESC
+                    """,
+                    (user["user_id"],),
+                )
+                orders = await cur.fetchall()
+        return json_response(True, orders, "Received orders retrieved successfully")
+    except Exception as e:
+        return json_response(False, None, f"Failed to retrieve received orders: {str(e)}")

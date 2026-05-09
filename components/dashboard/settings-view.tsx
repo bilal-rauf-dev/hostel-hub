@@ -62,6 +62,7 @@ export function SettingsView() {
         setLoading(true)
         setError(null)
         const res = await usersApi.getMe()
+        console.log('User data:', res.data)
         if (res.data?.success) {
           const d = res.data.data
           if (!mounted) return
@@ -110,7 +111,7 @@ export function SettingsView() {
       // ignore errors on logout
     }
     clearTokens()
-    if (typeof window !== 'undefined') window.location.href = '/login'
+    if (typeof window !== 'undefined') window.location.href = '/'
   }
 
   return (
@@ -155,7 +156,7 @@ export function SettingsView() {
           >
             <div className="flex items-center justify-between px-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A]">Preferences & Security</p>
-              <button className="flex items-center gap-2 text-red-500 text-[10px] font-black uppercase tracking-widest hover:bg-red-50 rounded-xl px-4 py-2 transition-all">
+              <button onClick={handleSignOut} className="flex items-center gap-2 text-red-500 text-[10px] font-black uppercase tracking-widest hover:bg-red-50 rounded-xl px-4 py-2 transition-all">
                 <LogOut className="h-4 w-4" /> Sign Out
               </button>
             </div>

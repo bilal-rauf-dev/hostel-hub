@@ -42,6 +42,8 @@ export function LoginForm({ onLogin }: LoginFormProps) {
       if (response.data.success) {
         const { access_token, refresh_token, user } = response.data.data
         saveTokens(access_token, refresh_token)
+        console.log('Login response data:', response.data.data)
+        console.log('User role:', user.role)
         onLogin(user.role)
       } else {
         setError(response.data.message || 'Login failed')

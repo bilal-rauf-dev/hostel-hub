@@ -38,8 +38,7 @@ async def get_events(
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
-                    SELECT event_id, title, description, location, event_date,
-                           image_url, created_by, created_at
+                    SELECT event_id, title, description, event_date, location, created_by, created_at
                     FROM events
                     WHERE event_date > NOW()
                     ORDER BY event_date ASC

@@ -26,8 +26,7 @@ async def get_notifications(
                 # Get all notifications
                 await cur.execute(
                     """
-                    SELECT notification_id, user_id, title, message, notification_type,
-                           related_id, is_read, created_at
+                    SELECT notification_id, user_id, title, body, is_read, created_at
                     FROM notifications
                     WHERE user_id = %s
                     ORDER BY created_at DESC

@@ -40,9 +40,9 @@ async def get_guidebook_entries(
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
-                    SELECT entry_id, title, content, category, icon_url, created_at, updated_at
+                    SELECT entry_id, title, content, category, created_at, updated_at
                     FROM guidebook_entries
-                    ORDER BY category ASC, created_at ASC
+                    ORDER BY category, created_at
                     """
                 )
                 entries = await cur.fetchall()

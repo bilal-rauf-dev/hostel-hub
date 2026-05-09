@@ -57,7 +57,7 @@ export function LostAndFoundView() {
     return () => { mounted = false }
   }, [])
 
-  const filteredItems = filter === 'All' ? items : items.filter(item => item.type === filter)
+  const filteredItems = filter === 'All' ? items : items.filter(item => item.item_type === filter.toLowerCase())
 
   const handleReport = async () => {
     setShowReportModal(true)
@@ -66,17 +66,18 @@ export function LostAndFoundView() {
   const submitReport = async () => {
     try {
       setReportSubmitting(true)
-      await lostFoundApi.postItem({
-        item_type: reportType,
+      const res = await lostFoundApi.postItem({
+        item_type: reportType.toLowerCase(),
         description: reportDesc,
         location_tag: reportLocation,
         item_date: reportDate,
         is_anonymous: reportAnonymous,
         title: reportTitle || undefined,
       })
+      console.log('Post response:', res.data)
       // refresh
-      const res = await lostFoundApi.getItems()
-      if (res.data?.success) setItems(res.data.data || [])
+      const refreshRes = await lostFoundApi.getItems()
+      if (refreshRes.data?.success) setItems(refreshRes.data.data || [])
       setShowReportModal(false)
       // reset
       setReportTitle('')
@@ -177,9 +178,9 @@ export function LostAndFoundView() {
 
                   <div className="absolute top-6 left-6 flex gap-3 transform transition-transform group-hover:translate-x-1 group-hover:translate-y-1">
                     <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-[0.2em] border border-white/50 backdrop-blur-xl ${
-                      item.type === 'Lost' ? 'bg-red-500/90 text-white' : 'bg-emerald-500/90 text-white'
+                      item.item_type === 'lost' ? 'bg-red-500/90 text-white' : 'bg-emerald-500/90 text-white'
                     }`}>
-                      {item.type}
+                      {item.item_type}
                     </span>
                     {item.status === 'Resolved' && (
                       <span className="px-4 py-1.5 bg-blue-500/90 backdrop-blur-xl text-white rounded-full text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
@@ -191,28 +192,26 @@ export function LostAndFoundView() {
 
                 <div className="p-8 flex-1 flex flex-col">
                   <div className="flex justify-between items-start mb-3">
-                    <h4 className="text-xl font-black text-[#4D5D53] tracking-tighter group-hover:text-[#D4A373] transition-colors leading-tight">{item.title}</h4>
+                    <h4 className="text-xl font-black text-[#4D5D53] tracking-tighter group-hover:text-[#D4A373] transition-colors leading-tight">{item.description}</h4>
                   </div>
                   
-                  <p className="text-sm text-[#79837C] line-clamp-2 mb-6 leading-relaxed flex-1 font-medium tracking-tight">
-                    {item.desc}
-                  </p>
+                  <p className="text-sm text-[#79837C] line-clamp-2 mb-6 leading-relaxed flex-1 font-medium tracking-tight">{item.title || 'No title provided.'}</p>
 
                   <div className="space-y-3 mb-8">
                     <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-[#BDBDBD] group-hover:text-[#D4A373] transition-colors">
-                      <MapPin className="h-3.5 w-3.5" /> {item.location}
+                      <MapPin className="h-3.5 w-3.5" /> {item.location_tag}
                     </div>
                     <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-[#BDBDBD]">
-                      <Clock className="h-3.5 w-3.5" /> {item.date}
+                      <Clock className="h-3.5 w-3.5" /> {item.item_date}
                     </div>
                   </div>
 
                   <div className="pt-6 border-t border-[#F0F0EE] flex items-center justify-between group-hover:border-[#D4A373]/10 transition-colors">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-xl bg-[#FAF9F6] border border-[#F0F0EE] flex items-center justify-center group-hover:bg-[#E9EDC9] transition-colors">
-                        {item.anonymous ? <EyeOff className="h-4 w-4 text-[#BDBDBD]" /> : <UserIcon className="h-4 w-4 text-[#D4A373]" />}
+                        {item.is_anonymous ? <EyeOff className="h-4 w-4 text-[#BDBDBD]" /> : <UserIcon className="h-4 w-4 text-[#D4A373]" />}
                       </div>
-                      <span className="text-[10px] font-black text-[#4D5D53] uppercase tracking-widest leading-none">{item.author}</span>
+                      <span className="text-[10px] font-black text-[#4D5D53] uppercase tracking-widest leading-none">{item.reporter_name}</span>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-[#FAF9F6] border border-[#F0F0EE] flex items-center justify-center text-[#BDBDBD] group-hover:bg-[#4D5D53] group-hover:text-white group-hover:rotate-12 transition-all duration-500">
                       <AlertCircle className="h-5 w-5" />

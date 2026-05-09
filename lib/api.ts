@@ -78,7 +78,7 @@ apiClient.interceptors.response.use(
         
         // Redirect to login
         if (typeof window !== 'undefined') {
-          window.location.href = '/login'
+          window.location.href = '/'
         }
         return Promise.reject(err)
       } finally {
@@ -201,18 +201,20 @@ export const marketplaceApi = {
   getMyOrders: async () => {
     return apiClient.get('/api/v1/marketplace/orders/mine')
   },
+
+  getReceivedOrders: async () => {
+  return apiClient.get('/api/v1/marketplace/orders/received')
+  },
 }
 
 // ============================================
 // MAINTENANCE API
 // ============================================
 export const maintenanceApi = {
-  createTicket: async (title: string, description: string, category: string, priority: string, room_number: string) => {
+  createTicket: async (description: string, category: string, room_number: string) => {
     return apiClient.post('/api/v1/maintenance/tickets', {
-      title,
       description,
       category,
-      priority,
       room_number,
     })
   },
