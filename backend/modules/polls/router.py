@@ -1,4 +1,5 @@
 from typing import Any
+from psycopg.rows import dict_row
 
 import psycopg
 from fastapi import APIRouter, Depends
@@ -32,7 +33,7 @@ async def get_polls(
     """Get active polls (where deadline > NOW())."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     SELECT poll_id, question, deadline, created_at, created_by
@@ -57,7 +58,7 @@ async def create_poll(
     """Create a new poll (admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Insert poll
                 await cur.execute(
                     """
@@ -105,7 +106,7 @@ async def cast_vote(
     """Cast a vote (calls stored procedure)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Call stored procedure: SELECT * FROM cast_vote($1, $2, $3)
                 await cur.execute(
                     """
@@ -143,7 +144,7 @@ async def get_poll_results(
     """Get poll results with percentages."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Get poll options
                 await cur.execute(
                     """

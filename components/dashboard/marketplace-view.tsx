@@ -13,32 +13,36 @@ import {
   ArrowUpRight
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { marketplaceApi } from '@/lib/api'
 
-function CreateListingForm({ onDone, onCancel }: { onDone: (success: boolean) => void; onCancel: () => void }) {
+function CreateListingForm({ onDone, onCancel }: { onDone: (success: boolean, message?: string) => void; onCancel: () => void }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('')
   const [price, setPrice] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [quantity, setQuantity] = useState('1')
 
   const handleSubmit = async (e?: any) => {
     if (e && e.preventDefault) e.preventDefault()
     try {
       setLoading(true)
       setError(null)
-      const res = await marketplaceApi.createListing(title, description, category, parseFloat(price || '0'))
+      const res = await marketplaceApi.createListing(title, description, category, parseFloat(price || '0'), parseInt(quantity || '1', 10))
       if (res.data?.success) {
-        onDone(true)
+        onDone(true, res.data?.message || 'Listing created successfully')
       } else {
-        setError(res.data?.message || 'Failed to create')
-        onDone(false)
+        const message = res.data?.message || 'Failed to create'
+        setError(message)
+        onDone(false, message)
       }
     } catch (err: any) {
-      setError(err?.message || 'Network error')
-      onDone(false)
+      const message = err?.response?.data?.message || err?.message || 'Network error'
+      setError(message)
+      onDone(false, message)
     } finally {
       setLoading(false)
     }
@@ -55,8 +59,22 @@ function CreateListingForm({ onDone, onCancel }: { onDone: (success: boolean) =>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full p-3 rounded-lg border" />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Category" className="p-3 rounded-lg border" />
+        <select value={category} onChange={(e) => setCategory(e.target.value)} className="p-3 rounded-lg border">
+          <option value="">Select category</option>
+          <option value="Food & Drinks">Food & Drinks</option>
+          <option value="Stationery">Stationery</option>
+          <option value="Electronics">Electronics</option>
+          <option value="Clothing">Clothing</option>
+          <option value="Books">Books</option>
+          <option value="Services">Services</option>
+          <option value="Transport">Transport</option>
+          <option value="Other">Other</option>
+        </select>
         <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Price" type="number" className="p-3 rounded-lg border" />
+      </div>
+      <div>
+        <label className="text-sm font-black">Quantity</label>
+        <input value={quantity} onChange={(e) => setQuantity(e.target.value)} type="number" min="1" className="w-full p-3 rounded-lg border" />
       </div>
       {error && <div className="text-red-500">{error}</div>}
       <div className="flex justify-end gap-3">
@@ -81,6 +99,16 @@ export function MarketplaceView() {
   const pushToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
+  }
+
+  const loadMarketplace = async () => {
+    const [listRes, ordersRes] = await Promise.all([
+      marketplaceApi.getListings(search, selectedCategory === 'All' ? undefined : selectedCategory),
+      marketplaceApi.getMyOrders(),
+    ])
+
+    if (listRes.data?.success) setListings(listRes.data.data || [])
+    if (ordersRes.data?.success) setOrders(ordersRes.data.data || [])
   }
 
   useEffect(() => {
@@ -142,13 +170,50 @@ export function MarketplaceView() {
       )}
 
       {/* Create Listing Modal */}
-      {creating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-lg">
-            <h4 className="text-lg font-black mb-4">Create Listing</h4>
-            <CreateListingForm onDone={async (success) => { setCreating(false); if (success) { const res = await marketplaceApi.getListings(); if (res.data?.success) setListings(res.data.data || []); } }} onCancel={() => setCreating(false)} />
-          </div>
-        </div>
+      {creating && createPortal(
+        <AnimatePresence>
+          <motion.div
+            key="modal-overlay"
+            className="fixed inset-0 z-[9999] flex items-center justify-center"
+          >
+            <motion.div
+              key="backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setCreating(false)}
+            />
+            <motion.div
+              key="modal-content"
+              initial={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
+              animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="relative bg-white p-6 rounded-2xl w-full max-w-lg mx-4 shadow-2xl z-10"
+            >
+              <h4 className="text-lg font-black mb-4">Create Listing</h4>
+              <CreateListingForm
+                onDone={async (success, message) => {
+                  if (success) {
+                    pushToast(message || 'Listing created successfully', 'success')
+                    setCreating(false)
+                    try {
+                      await loadMarketplace()
+                    } catch (err: any) {
+                      pushToast(err?.message || 'Failed to refresh listings', 'error')
+                    }
+                  } else {
+                    pushToast(message || 'Failed to create listing', 'error')
+                  }
+                }}
+                onCancel={() => setCreating(false)}
+              />
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>,
+        document.body
       )}
 
       <AnimatePresence mode="wait">
@@ -208,7 +273,7 @@ export function MarketplaceView() {
           {filteredProducts.map((product, idx) => (
             <motion.div
               layout
-              key={product.id}
+              key={product.listing_id}
               initial={{ opacity: 0, y: 30, filter: 'blur(10px)' }}
               animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
               exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
@@ -218,8 +283,8 @@ export function MarketplaceView() {
               <div className="bg-white rounded-[2.5rem] p-4 border border-[#F0F0EE] shadow-sm hover:border-[#D4A373]/30 hover:bg-[#FAF9F6]/50 transition-all duration-700 overflow-hidden relative hover:shadow-2xl hover:shadow-[#D4A373]/10">
                 {/* Image Wrap */}
                 <div className="aspect-[4/3] rounded-[1.75rem] overflow-hidden mb-5 relative bg-[#F4F4F2]">
-                  <Image 
-                    src={product.image} 
+                  <Image unoptimized 
+                    src={`https://picsum.photos/seed/${product.listing_id}/400/300`}
                     alt={product.title}
                     fill
                     className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
@@ -235,7 +300,7 @@ export function MarketplaceView() {
                   {/* Rating */}
                   <div className="absolute bottom-4 right-4 bg-[#4D5D53]/90 backdrop-blur-md px-3 py-1 rounded-full text-white text-[10px] font-bold flex items-center gap-1 transform transition-transform group-hover:-translate-x-1 group-hover:-translate-y-1">
                     <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                    {product.rating}
+                    {product.quantity} left
                   </div>
                 </div>
 
@@ -245,12 +310,12 @@ export function MarketplaceView() {
                       <h4 className="text-lg font-bold text-[#4D5D53] tracking-tight line-clamp-1 group-hover:text-[#D4A373] transition-colors">{product.title}</h4>
                       <p className="text-[10px] text-[#9A9A9A] font-bold flex items-center gap-1.5 mt-0.5">
                         <Tag className="h-3 w-3" />
-                        By {product.seller}
+                        By {product.seller_display_name || 'Unknown'}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-black text-[#4D5D53] tracking-tighter">${product.price.toFixed(2)}</p>
-                      <p className="text-[9px] text-[#D4A373] font-black uppercase tracking-widest mt-0.5">{product.time}</p>
+                      <p className="text-xl font-black text-[#4D5D53] tracking-tighter">${product.price}</p>
+                      <p className="text-[9px] text-[#D4A373] font-black uppercase tracking-widest mt-0.5">{product.status}</p>
                     </div>
                   </div>
 

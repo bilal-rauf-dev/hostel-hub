@@ -162,13 +162,13 @@ export const marketplaceApi = {
     })
   },
 
-  createListing: async (title: string, description: string, category: string, price: number, image_url?: string) => {
+  createListing: async (title: string, description: string, category: string, price: number, quantity: number) => {
     return apiClient.post('/api/v1/marketplace/listings', {
       title,
       description,
       category,
       price,
-      image_url,
+      quantity,
     })
   },
 

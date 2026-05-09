@@ -1,5 +1,6 @@
 from datetime import date
 from typing import Any, Optional
+from psycopg.rows import dict_row
 
 import psycopg
 from fastapi import APIRouter, Depends
@@ -34,13 +35,13 @@ async def get_lost_found_items(
     """Get lost & found items (excluding archived, with anonymous reporter handling in SQL)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     SELECT lf.item_id, lf.item_type, lf.description, lf.location_tag,
                            lf.item_date, lf.image_url, lf.is_anonymous, lf.is_archived,
                            CASE WHEN is_anonymous = TRUE THEN NULL ELSE posted_by END as reporter,
-                           CASE WHEN is_anonymous = TRUE THEN 'Anonymous' ELSE u.display_name END as reporter_name,
+                           CASE WHEN is_anonymous = TRUE THEN 'Anonymous' ELSE u.display_name END as reporter_name
                     FROM lost_found_items lf
                     LEFT JOIN users u ON lf.posted_by = u.user_id
                     WHERE is_archived = FALSE
@@ -76,7 +77,7 @@ async def post_lost_found_item(
         location_tag = request_body.location_tag or request_body.location
         title = request_body.title or request_body.description
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     INSERT INTO lost_found_items
@@ -120,7 +121,7 @@ async def archive_item(
     """Archive a lost & found item (poster or admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Check ownership
                 await cur.execute(
                     "SELECT posted_by FROM lost_found_items WHERE item_id = %s",

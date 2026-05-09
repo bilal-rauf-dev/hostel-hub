@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from psycopg.rows import dict_row
 
 import psycopg
 from fastapi import APIRouter, Depends
@@ -36,7 +37,7 @@ async def get_guidebook_entries(
     """Get guidebook entries ordered by category and date."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     SELECT entry_id, title, content, category, icon_url, created_at, updated_at
@@ -60,7 +61,7 @@ async def create_guidebook_entry(
     """Create a guidebook entry (admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     INSERT INTO guidebook_entries (title, content, category, icon_url)
@@ -116,7 +117,7 @@ async def update_guidebook_entry(
         update_clause = ", ".join(updates)
         
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     f"""
                     UPDATE guidebook_entries
@@ -146,7 +147,7 @@ async def delete_guidebook_entry(
     """Delete a guidebook entry (admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     "DELETE FROM guidebook_entries WHERE entry_id = %s",
                     (entry_id,),

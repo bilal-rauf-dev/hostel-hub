@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from psycopg.rows import dict_row
 
 import psycopg
 from fastapi import APIRouter, Depends
@@ -29,7 +30,7 @@ async def get_current_user_profile(
     """Get current user's profile information."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     SELECT user_id, email, student_id, display_name, profile_picture,
@@ -85,7 +86,7 @@ async def update_current_user_profile(
         update_clause = ", ".join(updates)
         
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     f"""
                     UPDATE users
@@ -117,7 +118,7 @@ async def verify_user(
     """Mark a user as verified (admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     UPDATE users
@@ -147,7 +148,7 @@ async def suspend_user(
     """Suspend a user account (admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     UPDATE users

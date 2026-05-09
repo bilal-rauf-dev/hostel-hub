@@ -1,6 +1,6 @@
 'use client'
 
-import { motion } from 'motion/react'
+import { motion, AnimatePresence } from 'motion/react'
 import { 
   Calendar, 
   MapPin, 
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import Image from 'next/image'
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { eventsApi } from '@/lib/api'
 
 export function EventsView() {
@@ -202,13 +203,35 @@ export function EventsView() {
       </div>
 
       {/* Create Event Modal */}
-      {creating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-xl">
-            <h4 className="text-lg font-bold mb-4">Create Event</h4>
-            <CreateEventForm onDone={async (success: boolean) => { setCreating(false); if (success) { const res = await eventsApi.getEvents(); if (res.data?.success) setEvents(res.data.data || []) } }} onCancel={() => setCreating(false)} />
-          </div>
-        </div>
+      {creating && createPortal(
+        <AnimatePresence>
+          <motion.div
+            key="modal-overlay"
+            className="fixed inset-0 z-[9999] flex items-center justify-center"
+          >
+            <motion.div
+              key="backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setCreating(false)}
+            />
+            <motion.div
+              key="modal-content"
+              initial={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
+              animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="relative bg-white p-6 rounded-2xl w-full max-w-xl mx-4 shadow-2xl z-10"
+            >
+              <h4 className="text-lg font-bold mb-4">Create Event</h4>
+              <CreateEventForm onDone={async (success: boolean) => { setCreating(false); if (success) { const res = await eventsApi.getEvents(); if (res.data?.success) setEvents(res.data.data || []) } }} onCancel={() => setCreating(false)} />
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>,
+        document.body
       )}
     </motion.div>
   )

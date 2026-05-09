@@ -242,7 +242,6 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
           ]).map((item) => (
             <motion.button
               key={item.label}
-              whileHover={{ x: 6 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setActiveTab(item.label)}
               className={`w-full flex items-center gap-4 px-5 py-4 rounded-[1.5rem] transition-all group ${
@@ -293,9 +292,9 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
           initial={{ y: -40, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-          className="h-24 bg-white/70 backdrop-blur-xl border-b border-[#F0F0EE] px-6 lg:px-10 flex items-center justify-between sticky top-0 z-40"
+          className="bg-white/70 backdrop-blur-xl border-b border-[#F0F0EE] px-6 lg:px-10 flex items-center justify-between sticky top-0 z-40"
         >
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 h-16">
             <button 
               onClick={() => setIsMobileMenuOpen(true)}
               className="lg:hidden p-2.5 bg-white border border-[#F0F0EE] rounded-xl text-[#79837C] hover:bg-[#FAF9F6] transition-all shadow-sm"
@@ -306,7 +305,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
               <h2 className="text-lg font-black text-[#4D5D53] tracking-tighter leading-tight">
                 {isAdminMode ? 'Staff Panel' : activeTab}
               </h2>
-              <p className="text-[11px] text-[#9A9A9A] font-bold uppercase tracking-widest mt-0.5">Welcome, Alex Rivers</p>
+              <p className="text-[11px] text-[#9A9A9A] font-bold uppercase tracking-widest mt-0.5">Welcome, {isAdminMode ? 'Admin' : 'Student'}</p>
             </div>
           </div>
 
@@ -346,7 +345,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                     animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
                     exit={{ opacity: 0, y: 10, scale: 0.95, filter: 'blur(10px)' }}
                     transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-                    className="absolute right-0 mt-3 w-80 bg-white/80 backdrop-blur-xl border border-white/50 rounded-[2.5rem] shadow-2xl shadow-black/5 overflow-hidden z-50 p-2"
+                    className="absolute right-0 mt-3 w-80 bg-white/95 backdrop-blur-xl border border-white/50 rounded-[2.5rem] shadow-2xl shadow-black/5 overflow-hidden z-50 p-2"
                   >
                     <div className="p-5 flex items-center justify-between border-b border-black/5 mb-2">
                        <h4 className="text-[10px] font-black uppercase tracking-widest text-[#4D5D53]">Notifications</h4>
@@ -396,7 +395,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                   setShowAccount(!showAccount)
                   setShowNotifications(false)
                 }}
-                className={`w-10 h-10 rounded-xl border-2 shadow-sm overflow-hidden flex items-center justify-center font-bold text-sm text-[10px] font-black tracking-widest cursor-pointer transition-all ${showAccount ? 'bg-[#4D5D53] border-[#4D5D53] text-white' : 'bg-[#D4A373] border-white text-white'}`}
+                className={`w-10 h-10 rounded-xl border-2 shadow-sm overflow-hidden flex items-center justify-center text-sm text-[10px] font-black tracking-widest cursor-pointer transition-all ${showAccount ? 'bg-[#4D5D53] border-[#4D5D53] text-white' : 'bg-[#D4A373] border-white text-white'}`}
               >
                 AR
               </motion.div>
@@ -408,7 +407,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                     animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
                     exit={{ opacity: 0, y: 10, scale: 0.95, filter: 'blur(10px)' }}
                     transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-                    className="absolute right-0 mt-3 w-64 bg-white/80 backdrop-blur-xl border border-white/50 rounded-[2.5rem] shadow-2xl shadow-black/5 overflow-hidden z-50 p-2"
+                    className="absolute right-0 mt-3 w-64 bg-white/95 backdrop-blur-xl border border-white/50 rounded-[2.5rem] shadow-2xl shadow-black/5 overflow-hidden z-50 p-2"
                   >
                     <div className="p-5 flex items-center gap-4 border-b border-black/5 mb-2">
                        <div className="w-10 h-10 rounded-xl bg-[#D4A373] flex items-center justify-center text-white font-black text-xs">AR</div>

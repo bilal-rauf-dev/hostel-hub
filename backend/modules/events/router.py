@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from psycopg.rows import dict_row
 
 import psycopg
 from fastapi import APIRouter, Depends
@@ -34,7 +35,7 @@ async def get_events(
     """Get upcoming events (where event_date > NOW())."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     SELECT event_id, title, description, location, event_date,
@@ -60,7 +61,7 @@ async def create_event(
     """Create a new event (admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     INSERT INTO events (title, description, location, event_date, image_url, created_by)
@@ -94,7 +95,7 @@ async def rsvp_event(
     """RSVP to an event (insert or update on conflict)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     INSERT INTO event_rsvps (event_id, user_id, status)
@@ -123,7 +124,7 @@ async def get_event_rsvps(
     """Get RSVP statistics for an event (admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     SELECT status, COUNT(*) as count

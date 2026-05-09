@@ -1,6 +1,8 @@
 from typing import Any
+from psycopg.rows import dict_row
 
 import psycopg
+from psycopg.rows import dict_row
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -39,7 +41,7 @@ async def create_ticket(
     """Create a new maintenance ticket."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     INSERT INTO maintenance_tickets
@@ -73,13 +75,13 @@ async def get_tickets(
     """Get maintenance tickets (role-aware: students see only their own, admins see all)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 if user["role"] == "student":
                     # Students see only their own tickets
                     await cur.execute(
                         """
-                        SELECT mt.ticket_id, mt.student_id, mt.title, mt.description,
-                               mt.category, mt.priority, mt.room_number, mt.status,
+                        SELECT mt.ticket_id, mt.student_id, mt.description,
+                               mt.category, mt.room_number, mt.status,
                                mt.assigned_to, mt.created_at, mt.updated_at,
                                u.display_name as student_name, u.room_number as student_room
                         FROM maintenance_tickets mt
@@ -119,7 +121,7 @@ async def update_ticket_status(
     """Update ticket status (admin only, calls stored procedure)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                                 # Call stored procedure: SELECT * FROM update_ticket_status($1, $2, $3)
                                 await cur.execute(
                                         """
@@ -152,7 +154,7 @@ async def assign_ticket(
     """Assign ticket to staff member (admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Check if staff user exists
                 await cur.execute(
                     "SELECT user_id FROM users WHERE user_id = %s AND role IN ('admin', 'staff')",

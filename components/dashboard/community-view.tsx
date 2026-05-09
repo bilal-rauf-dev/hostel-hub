@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { pollsApi } from '@/lib/api'
 import { isAdmin } from '@/lib/auth'
 
@@ -124,32 +125,54 @@ export function CommunityView() {
       )}
 
       {/* Create Poll Modal */}
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-xl">
-            <h4 className="text-lg font-black mb-4">Create Poll</h4>
-            <input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Question" className="w-full p-3 border rounded-md mb-3" />
-            <div className="space-y-2 mb-3">
-              {options.map((opt, idx) => (
-                <div key={idx} className="flex gap-2">
-                  <input value={opt} onChange={e=>updateOption(idx, e.target.value)} placeholder={`Option ${idx+1}`} className="flex-1 p-2 border rounded-md" />
-                  <button onClick={()=>removeOption(idx)} disabled={options.length<=2} className="px-3 bg-red-50 text-red-600 rounded-md">-</button>
+      {showCreate && createPortal(
+        <AnimatePresence>
+          <motion.div
+            key="modal-overlay"
+            className="fixed inset-0 z-[9999] flex items-center justify-center"
+          >
+            <motion.div
+              key="backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setShowCreate(false)}
+            />
+            <motion.div
+              key="modal-content"
+              initial={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
+              animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="relative bg-white p-6 rounded-2xl w-full max-w-xl mx-4 shadow-2xl z-10"
+            >
+              <h4 className="text-lg font-black mb-4">Create Poll</h4>
+              <input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Question" className="w-full p-3 border rounded-md mb-3" />
+              <div className="space-y-2 mb-3">
+                {options.map((opt, idx) => (
+                  <div key={idx} className="flex gap-2">
+                    <input value={opt} onChange={e=>updateOption(idx, e.target.value)} placeholder={`Option ${idx+1}`} className="flex-1 p-2 border rounded-md" />
+                    <button onClick={()=>removeOption(idx)} disabled={options.length<=2} className="px-3 bg-red-50 text-red-600 rounded-md">-</button>
+                  </div>
+                ))}
+                <div>
+                  <button onClick={addOption} disabled={options.length>=5} className="px-3 py-1 bg-[#FAF9F6] rounded-md">Add option</button>
                 </div>
-              ))}
-              <div>
-                <button onClick={addOption} disabled={options.length>=5} className="px-3 py-1 bg-[#FAF9F6] rounded-md">Add option</button>
               </div>
-            </div>
-            <div className="mb-4">
-              <label className="text-xs font-bold">Deadline</label>
-              <input type="datetime-local" value={deadline} onChange={e=>setDeadline(e.target.value)} className="w-full p-2 border rounded-md mt-1" />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={()=>setShowCreate(false)} className="px-4 py-2 border rounded-md">Cancel</button>
-              <button onClick={handleCreatePoll} className="px-4 py-2 bg-[#4D5D53] text-white rounded-md">Create</button>
-            </div>
-          </div>
-        </div>
+              <div className="mb-4">
+                <label className="text-xs font-bold">Deadline</label>
+                <input type="datetime-local" value={deadline} onChange={e=>setDeadline(e.target.value)} className="w-full p-2 border rounded-md mt-1" />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={()=>setShowCreate(false)} className="px-4 py-2 border rounded-md">Cancel</button>
+                <button onClick={handleCreatePoll} className="px-4 py-2 bg-[#4D5D53] text-white rounded-md">Create</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>,
+        document.body
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -191,7 +214,7 @@ export function CommunityView() {
             <AnimatePresence mode="popLayout">
               {polls.map(poll => (
                 <motion.div
-                  key={`poll-${poll.id}`}
+                  key={`poll-${poll.poll_id}`}
                   initial={{ opacity: 0, x: -30, filter: 'blur(10px)' }}
                   animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                   transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}

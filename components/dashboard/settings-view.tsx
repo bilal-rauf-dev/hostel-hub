@@ -169,7 +169,7 @@ export function SettingsView() {
                   <div className="space-y-3">
                     {section.items.map((item, i) => (
                       <motion.div
-                        key={item.id}
+                        key={`item-${item.id}`}
                         initial={{ opacity: 0, x: -20, filter: 'blur(8px)' }}
                         animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                         transition={{ delay: 0.1 * i + (idx * 0.3), duration: 0.8, ease: [0.16, 1, 0.3, 1] }}

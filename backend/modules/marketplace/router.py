@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from psycopg.rows import dict_row
 
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
@@ -17,9 +18,9 @@ def json_response(success: bool, data: Any = None, message: str = "") -> dict:
 class CreateListingRequest(BaseModel):
     title: str
     description: str
-    category: str
     price: float
-    image_url: Optional[str] = None
+    quantity: int
+    category: str
 
 
 class UpdateListingRequest(BaseModel):
@@ -73,12 +74,12 @@ async def get_listings(
         where_clause = " AND ".join(where_clauses)
         
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     f"""
                     SELECT ml.listing_id, ml.seller_id, ml.title, ml.description,
-                           ml.category, ml.price, ml.image_url, ml.status,
-                           ml.created_at, u.display_name as seller_name, u.contact_number
+                           ml.category, ml.price, ml.status,
+                           ml.created_at
                     FROM marketplace_listings ml
                     JOIN users u ON ml.seller_id = u.user_id
                     WHERE {where_clause}
@@ -102,28 +103,27 @@ async def create_listing(
     """Create a new marketplace listing."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     INSERT INTO marketplace_listings
-                    (seller_id, title, description, category, price, image_url, status)
+                    (seller_id, title, description, price, quantity, category, status)
                     VALUES (%s, %s, %s, %s, %s, %s, 'active')
-                    RETURNING listing_id, seller_id, title, description, category,
-                              price, image_url, status, created_at
+                    RETURNING listing_id
                     """,
                     (
                         user["user_id"],
                         request_body.title,
                         request_body.description,
-                        request_body.category,
                         request_body.price,
-                        request_body.image_url,
+                        request_body.quantity,
+                        request_body.category,
                     ),
                 )
                 listing = await cur.fetchone()
                 await conn.commit()
         
-        return json_response(True, listing, "Listing created successfully")
+        return json_response(True, {"listing_id": listing["listing_id"]}, "Listing created successfully")
     except Exception as e:
         return json_response(False, None, f"Failed to create listing: {str(e)}")
 
@@ -138,7 +138,7 @@ async def update_listing(
     """Update a marketplace listing (seller or admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Check ownership
                 await cur.execute(
                     "SELECT seller_id FROM marketplace_listings WHERE listing_id = %s",
@@ -207,7 +207,7 @@ async def delete_listing(
     """Delete a marketplace listing (seller or admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Check ownership
                 await cur.execute(
                     "SELECT seller_id FROM marketplace_listings WHERE listing_id = %s",
@@ -245,7 +245,7 @@ async def place_order(
     """Place an order for a marketplace listing (calls stored procedure)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                                 # Call stored procedure: SELECT * FROM place_order($1, $2, $3)
                                 await cur.execute(
                                         """
@@ -283,7 +283,7 @@ async def update_order_status(
     """Update order status (seller only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Check seller ownership
                 await cur.execute(
                     """
@@ -329,7 +329,7 @@ async def get_my_orders(
     """Get current user's marketplace orders."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     SELECT mo.order_id, mo.buyer_id, mo.seller_id, mo.listing_id,

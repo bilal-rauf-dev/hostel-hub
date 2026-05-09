@@ -1,4 +1,5 @@
 from typing import Any
+from psycopg.rows import dict_row
 
 import psycopg
 from fastapi import APIRouter, Depends
@@ -21,7 +22,7 @@ async def get_notifications(
     """Get user's notifications with unread_count as separate field."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Get all notifications
                 await cur.execute(
                     """
@@ -68,7 +69,7 @@ async def mark_notification_as_read(
     """Mark a notification as read."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Check ownership
                 await cur.execute(
                     "SELECT user_id FROM notifications WHERE notification_id = %s",
@@ -109,7 +110,7 @@ async def mark_all_notifications_as_read(
     """Mark all user notifications as read."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     UPDATE notifications

@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, Optional
+from psycopg.rows import dict_row
 
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException, status

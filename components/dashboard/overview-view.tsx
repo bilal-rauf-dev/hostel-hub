@@ -22,6 +22,7 @@ export function OverviewView() {
   const [recentListings, setRecentListings] = useState<any[]>([])
   const [recentTickets, setRecentTickets] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const activeTicketCount = recentTickets.filter((ticket) => ticket.status !== 'resolved' && ticket.status !== 'closed').length
 
   useEffect(() => {
     let mounted = true
@@ -78,15 +79,15 @@ export function OverviewView() {
             backgroundColor: '#FAF9F6', 
             borderColor: '#D4A373',
             scale: 1.01,
-            transition: { duration: 0.3 }
+            transition: { duration: 0.05 }
           }}
           className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-500 hover:shadow-xl hover:shadow-[#D4A373]/5"
         >
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">Marketplace</p>
-            <h4 className="text-2xl font-black text-[#4D5D53]">12 New</h4>
+            <h4 className="text-2xl font-black text-[#4D5D53]">{recentListings.length} New</h4>
             <p className="text-[10px] items-center flex gap-1 text-emerald-600 font-bold mt-1">
-              +4 since yesterday
+              {recentListings.length} total listings
             </p>
           </div>
           <motion.div 
@@ -105,15 +106,15 @@ export function OverviewView() {
             backgroundColor: '#FAF9F6', 
             borderColor: '#F97316',
             scale: 1.01,
-            transition: { duration: 0.3 }
+            transition: { duration: 0.05 }
           }}
           className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-500 hover:shadow-xl hover:shadow-orange-500/5"
         >
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">Maintenance</p>
-            <h4 className="text-2xl font-black text-[#4D5D53]">02 Active</h4>
+            <h4 className="text-2xl font-black text-[#4D5D53]">{activeTicketCount} Active</h4>
             <p className="text-[10px] items-center flex gap-1 text-[#D4A373] font-bold mt-1">
-              Next update in 2h
+              {recentTickets.length} total tickets
             </p>
           </div>
           <motion.div 
@@ -132,7 +133,7 @@ export function OverviewView() {
             backgroundColor: '#FAF9F6', 
             borderColor: '#10B981',
             scale: 1.01,
-            transition: { duration: 0.3 }
+            transition: { duration: 0.05 }
           }}
           className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-500 hover:shadow-xl hover:shadow-emerald-500/5"
         >
@@ -140,7 +141,7 @@ export function OverviewView() {
             <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">Community Poll</p>
             <h4 className="text-2xl font-black text-[#4D5D53]">Vote Now</h4>
             <p className="text-[10px] items-center flex gap-1 text-[#4D5D53] font-bold mt-1">
-              &quot;Preferred study hours&quot;
+              Active polls in community
             </p>
           </div>
           <motion.div 
@@ -182,9 +183,10 @@ export function OverviewView() {
               >
                 <div className="w-24 h-24 bg-[#F4F4F2] rounded-2xl overflow-hidden relative shrink-0">
                   <Image 
-                    src={item.image_url || `https://picsum.photos/seed/${idx + 10}/200/200`} 
+                    src={`https://picsum.photos/seed/${item.listing_id}/400/300`}
                     alt={item.title || 'Product'}
                     fill
+                    unoptimized
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     referrerPolicy="no-referrer"
                   />
@@ -194,7 +196,7 @@ export function OverviewView() {
                     <h5 className="text-sm font-black text-[#4D5D53] line-clamp-1 group-hover:text-[#D4A373] transition-colors">
                       {item.title}
                     </h5>
-                    <p className="text-[10px] text-[#9A9A9A] font-bold">By {item.seller_name || item.seller || 'Unknown'}</p>
+                    <p className="text-[10px] text-[#9A9A9A] font-bold">By {item.seller_display_name || 'Unknown'}</p>
                   </div>
                   <p className="text-sm font-black text-[#4D5D53] tracking-tighter">${item.price?.toFixed?.(2) ?? item.price}</p>
                 </div>
@@ -227,27 +229,31 @@ export function OverviewView() {
         <motion.div 
           initial={{ x: 20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          transition={{ delay: 0.6, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ delay: 0.2, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
           className="space-y-4"
         >
           <div className="space-y-4">
-            {(recentTickets.length > 0 ? recentTickets : [
-              { title: 'Plumbing Request #3041', date: 'In Progress • Oct 28', color: 'bg-[#FEFAE0] text-[#D4A373] border-[#E9EDC9]' },
-              { title: 'AC Repair #2988', date: 'Resolved • Oct 25', color: 'bg-orange-50 text-orange-600 border-orange-100' },
-            ]).map((ticket, idx) => (
-              <motion.div 
-                key={ticket.ticket_id || ticket.id || idx}
-                whileHover={{ x: 6 }}
-                className="p-5 bg-white rounded-2xl border border-[#EFEFE9] flex items-center gap-4 group cursor-pointer shadow-sm transition-all duration-300"
-              >
-                <div className={`w-3.5 h-3.5 rounded-full ${ticket.color || 'bg-[#FEFAE0] text-[#D4A373]'}`} />
-                <div className="flex-1 min-w-0">
-                  <h5 className="text-sm font-black text-[#4D5D53] truncate">{ticket.title || ticket.title_text || ticket.subject}</h5>
-                  <p className="text-[10px] text-[#9A9A9A]">{ticket.created_at || ticket.date || ticket.time || ''}</p>
-                </div>
-                <ArrowRight className="h-4 w-4 text-[#BDBDBD] opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
-              </motion.div>
-            ))}
+            {recentTickets.length > 0 ? (
+              recentTickets.map((ticket, idx) => {
+                const resolved = ticket.status === 'resolved' || ticket.status === 'closed'
+                return (
+                  <motion.div 
+                    key={ticket.ticket_id || ticket.id || idx}
+                    whileHover={{ x: 6 }}
+                    className="p-5 bg-white rounded-2xl border border-[#EFEFE9] flex items-center gap-4 group cursor-pointer shadow-sm transition-all duration-300"
+                  >
+                    <div className={`w-3.5 h-3.5 rounded-full ${resolved ? 'bg-emerald-500' : 'bg-[#D4A373]'}`} />
+                    <div className="flex-1 min-w-0">
+                      <h5 className="text-sm font-black text-[#4D5D53] truncate">{ticket.category} • Room {ticket.room_number}</h5>
+                      <p className="text-[10px] text-[#9A9A9A]">{ticket.created_at}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-[#BDBDBD] opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
+                  </motion.div>
+                )
+              })
+            ) : (
+              <p className="text-xs text-[#9A9A9A] text-center py-4">No tickets yet</p>
+            )}
           </div>
 
           <motion.div 
@@ -262,28 +268,27 @@ export function OverviewView() {
                 Recent Tickets
               </h4>
               <div className="space-y-6">
-                <motion.div 
-                  whileHover={{ x: 6 }}
-                  className="relative pl-6 pb-6 border-l border-[#F0F0EE] cursor-pointer group"
-                >
-                  <div className="absolute left-[-5px] top-0 w-2.5 h-2.5 rounded-full bg-[#D4A373] border-4 border-white transition-transform group-hover:scale-150" />
-                  <p className="text-xs font-bold text-[#414D45] group-hover:text-[#D4A373] transition-colors">Plumbing Request #3041</p>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                    <p className="text-[10px] text-[#9A9A9A] font-bold">In Progress • Oct 28</p>
-                  </div>
-                </motion.div>
-                <motion.div 
-                  whileHover={{ x: 6 }}
-                  className="relative pl-6 cursor-pointer group"
-                >
-                  <div className="absolute left-[-5px] top-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-4 border-white transition-transform group-hover:scale-150" />
-                  <p className="text-xs font-bold text-[#414D45] group-hover:text-emerald-600 transition-colors">AC Repair #2988</p>
-                  <div className="flex items-center gap-1.5 mt-1 text-emerald-600">
-                    <CheckCircle2 className="h-3 w-3" />
-                    <p className="text-[10px] font-bold">Resolved • Oct 25</p>
-                  </div>
-                </motion.div>
+                {recentTickets.length > 0 ? (
+                  recentTickets.slice(0, 2).map((ticket, idx) => {
+                    const resolved = ticket.status === 'resolved' || ticket.status === 'closed'
+                    return (
+                      <motion.div 
+                        key={ticket.ticket_id || ticket.id || idx}
+                        whileHover={{ x: 6 }}
+                        className={`relative pl-6 ${idx === 0 ? 'pb-6 border-l border-[#F0F0EE]' : ''} cursor-pointer group`}
+                      >
+                        <div className={`absolute left-[-5px] top-0 w-2.5 h-2.5 rounded-full ${resolved ? 'bg-emerald-500' : 'bg-[#D4A373]'} border-4 border-white transition-transform group-hover:scale-150`} />
+                        <p className="text-xs font-bold text-[#414D45] group-hover:text-[#D4A373] transition-colors">{ticket.category} • Room {ticket.room_number}</p>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          {resolved ? <CheckCircle2 className="h-3 w-3 text-emerald-600" /> : <span className="w-1.5 h-1.5 rounded-full bg-[#D4A373] animate-pulse" />}
+                          <p className={`text-[10px] font-bold ${resolved ? 'text-emerald-600' : 'text-[#9A9A9A]'}`}>{ticket.status}</p>
+                        </div>
+                      </motion.div>
+                    )
+                  })
+                ) : (
+                  <p className="text-xs text-[#9A9A9A]">No recent tickets</p>
+                )}
               </div>
             </div>
           </motion.div>

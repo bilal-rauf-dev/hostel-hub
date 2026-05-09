@@ -15,6 +15,7 @@ import {
   EyeOff
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { lostFoundApi } from '@/lib/api'
 import Image from 'next/image'
 
@@ -148,7 +149,7 @@ export function LostAndFoundView() {
           {filteredItems.map((item, idx) => (
             <motion.div
               layout
-              key={item.id}
+              key={`item-${item.item_id}`}
               initial={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
               animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
               exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
@@ -233,27 +234,49 @@ export function LostAndFoundView() {
         </div>
         <Tag className="absolute -right-5 -bottom-5 h-32 w-32 text-white/5 -rotate-12" />
       </div>
-      {showReportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-xl">
-            <h4 className="text-lg font-black mb-4">Report Item</h4>
-            <div className="grid grid-cols-1 gap-3">
-              <div className="flex gap-2">
-                <button onClick={()=>setReportType('Lost')} className={`flex-1 py-2 rounded-md ${reportType==='Lost'?'bg-[#D4A373] text-white':'bg-[#FAF9F6]'}`}>Lost</button>
-                <button onClick={()=>setReportType('Found')} className={`flex-1 py-2 rounded-md ${reportType==='Found'?'bg-[#D4A373] text-white':'bg-[#FAF9F6]'}`}>Found</button>
+      {showReportModal && createPortal(
+        <AnimatePresence>
+          <motion.div
+            key="modal-overlay"
+            className="fixed inset-0 z-[9999] flex items-center justify-center"
+          >
+            <motion.div
+              key="backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setShowReportModal(false)}
+            />
+            <motion.div
+              key="modal-content"
+              initial={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
+              animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="relative bg-white rounded-2xl p-6 w-full max-w-xl mx-4 shadow-2xl z-10"
+            >
+              <h4 className="text-lg font-black mb-4">Report Item</h4>
+              <div className="grid grid-cols-1 gap-3">
+                <div className="flex gap-2">
+                  <button onClick={()=>setReportType('Lost')} className={`flex-1 py-2 rounded-md ${reportType==='Lost'?'bg-[#D4A373] text-white':'bg-[#FAF9F6]'}`}>Lost</button>
+                  <button onClick={()=>setReportType('Found')} className={`flex-1 py-2 rounded-md ${reportType==='Found'?'bg-[#D4A373] text-white':'bg-[#FAF9F6]'}`}>Found</button>
+                </div>
+                <input value={reportTitle} onChange={e=>setReportTitle(e.target.value)} placeholder="Title (optional)" className="p-3 border rounded-md" />
+                <textarea value={reportDesc} onChange={e=>setReportDesc(e.target.value)} placeholder="Description" className="p-3 border rounded-md h-28" />
+                <input value={reportLocation} onChange={e=>setReportLocation(e.target.value)} placeholder="Location tag" className="p-3 border rounded-md" />
+                <input value={reportDate} onChange={e=>setReportDate(e.target.value)} placeholder="Date (YYYY-MM-DD)" className="p-3 border rounded-md" />
+                <label className="flex items-center gap-2"><input type="checkbox" checked={reportAnonymous} onChange={e=>setReportAnonymous(e.target.checked)} /> Report anonymously</label>
               </div>
-              <input value={reportTitle} onChange={e=>setReportTitle(e.target.value)} placeholder="Title (optional)" className="p-3 border rounded-md" />
-              <textarea value={reportDesc} onChange={e=>setReportDesc(e.target.value)} placeholder="Description" className="p-3 border rounded-md h-28" />
-              <input value={reportLocation} onChange={e=>setReportLocation(e.target.value)} placeholder="Location tag" className="p-3 border rounded-md" />
-              <input value={reportDate} onChange={e=>setReportDate(e.target.value)} placeholder="Date (YYYY-MM-DD)" className="p-3 border rounded-md" />
-              <label className="flex items-center gap-2"><input type="checkbox" checked={reportAnonymous} onChange={e=>setReportAnonymous(e.target.checked)} /> Report anonymously</label>
-            </div>
-            <div className="flex justify-end gap-3 mt-4">
-              <button onClick={()=>setShowReportModal(false)} className="px-4 py-2 border rounded-md">Cancel</button>
-              <button onClick={submitReport} disabled={reportSubmitting} className="px-4 py-2 bg-[#4D5D53] text-white rounded-md">{reportSubmitting? 'Submitting...':'Submit'}</button>
-            </div>
-          </div>
-        </div>
+              <div className="flex justify-end gap-3 mt-4">
+                <button onClick={()=>setShowReportModal(false)} className="px-4 py-2 border rounded-md">Cancel</button>
+                <button onClick={submitReport} disabled={reportSubmitting} className="px-4 py-2 bg-[#4D5D53] text-white rounded-md">{reportSubmitting? 'Submitting...':'Submit'}</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>,
+        document.body
       )}
     </motion.div>
   )

@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from psycopg.rows import dict_row
 
 import psycopg
 from fastapi import APIRouter, Depends
@@ -31,7 +32,7 @@ async def get_safety_alerts(
     """Return safety alerts. Students only see active alerts, admins see all."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 if user.get("role") == "admin":
                     await cur.execute(
                         """
@@ -66,7 +67,7 @@ async def create_safety_alert(
         body = request_body.body or request_body.message or ""
         severity = request_body.severity or request_body.level or "info"
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     INSERT INTO safety_alerts (title, body, severity, is_active)
@@ -92,7 +93,7 @@ async def toggle_safety_alert(
     """Toggle the is_active state for an alert (admin only)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
                     UPDATE safety_alerts
