@@ -1,7 +1,8 @@
-from typing import Any
+from typing import Any, Optional
 
 import psycopg
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from auth.dependencies import get_current_user, require_admin
 from database.connection import get_db_pool
@@ -11,6 +12,15 @@ router = APIRouter(prefix="/api/v1/safety-alerts", tags=["safety-alerts"])
 
 def json_response(success: bool, data: Any = None, message: str = "") -> dict:
     return {"success": success, "data": data, "message": message}
+
+
+class CreateSafetyAlertRequest(BaseModel):
+    title: Optional[str] = None
+    target: Optional[str] = None
+    body: Optional[str] = None
+    message: Optional[str] = None
+    severity: Optional[str] = None
+    level: Optional[str] = None
 
 
 @router.get("/")
@@ -46,15 +56,15 @@ async def get_safety_alerts(
 
 @router.post("/")
 async def create_safety_alert(
-    payload: dict[str, Any],
+    request_body: CreateSafetyAlertRequest,
     admin: dict = Depends(require_admin),
     pool=Depends(get_db_pool),
 ) -> dict:
     """Create a new safety alert (admin only)."""
     try:
-        title = payload.get("title") or payload.get("target") or "Safety Alert"
-        body = payload.get("body") or payload.get("message") or ""
-        severity = payload.get("severity") or payload.get("level") or "info"
+        title = request_body.title or request_body.target or "Safety Alert"
+        body = request_body.body or request_body.message or ""
+        severity = request_body.severity or request_body.level or "info"
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict) as cur:
                 await cur.execute(

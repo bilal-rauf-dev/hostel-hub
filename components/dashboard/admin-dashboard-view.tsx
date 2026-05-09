@@ -71,7 +71,7 @@ export function AdminDashboardView() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {STATS.map((stat, idx) => (
+        {stats.map((stat, idx) => (
           <motion.div
             key={stat.label}
             initial={{ opacity: 0, x: -20, filter: 'blur(8px)' }}

@@ -2,6 +2,7 @@ from typing import Any
 
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from auth.dependencies import get_current_user, require_admin
 from database.connection import get_db_pool
@@ -13,13 +14,25 @@ def json_response(success: bool, data: Any = None, message: str = "") -> dict:
     return {"success": success, "data": data, "message": message}
 
 
+class CreateTicketRequest(BaseModel):
+    title: str
+    description: str
+    category: str
+    priority: str
+    room_number: str
+
+
+class UpdateTicketStatusRequest(BaseModel):
+    status: str
+
+
+class AssignTicketRequest(BaseModel):
+    assigned_to: int
+
+
 @router.post("/tickets")
 async def create_ticket(
-    title: str,
-    description: str,
-    category: str,
-    priority: str,
-    room_number: str,
+    request_body: CreateTicketRequest,
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -35,7 +48,14 @@ async def create_ticket(
                     RETURNING ticket_id, student_id, title, description, category,
                               priority, room_number, status, created_at
                     """,
-                    (user["user_id"], title, description, category, priority, room_number),
+                    (
+                        user["user_id"],
+                        request_body.title,
+                        request_body.description,
+                        request_body.category,
+                        request_body.priority,
+                        request_body.room_number,
+                    ),
                 )
                 ticket = await cur.fetchone()
                 await conn.commit()
@@ -92,7 +112,7 @@ async def get_tickets(
 @router.patch("/tickets/{ticket_id}/status")
 async def update_ticket_status(
     ticket_id: int,
-    status: str,
+    request_body: UpdateTicketStatusRequest,
     admin: dict = Depends(require_admin),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -100,16 +120,20 @@ async def update_ticket_status(
     try:
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict) as cur:
-                # Call stored procedure: SELECT * FROM update_ticket_status($1, $2, $3)
-                await cur.execute(
-                    """
-                    SELECT * FROM update_ticket_status(%s, %s, %s)
-                    """,
-                    (ticket_id, status, admin["user_id"]),
-                )
-                result = await cur.fetchone()
-                await conn.commit()
-        
+                                # Call stored procedure: SELECT * FROM update_ticket_status($1, $2, $3)
+                                await cur.execute(
+                                        """
+                                        SELECT * FROM update_ticket_status(
+                                            %s,
+                                            %s::ticket_status,
+                                            %s
+                                        )
+                                        """,
+                                        (ticket_id, request_body.status, admin["user_id"]),
+                                )
+                                result = await cur.fetchone()
+                                await conn.commit()
+
         if result and result.get("ticket_id"):
             return json_response(True, result, "Ticket status updated successfully")
         else:
@@ -121,7 +145,7 @@ async def update_ticket_status(
 @router.patch("/tickets/{ticket_id}/assign")
 async def assign_ticket(
     ticket_id: int,
-    assigned_to: int,
+    request_body: AssignTicketRequest,
     admin: dict = Depends(require_admin),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -132,7 +156,7 @@ async def assign_ticket(
                 # Check if staff user exists
                 await cur.execute(
                     "SELECT user_id FROM users WHERE user_id = %s AND role IN ('admin', 'staff')",
-                    (assigned_to,),
+                    (request_body.assigned_to,),
                 )
                 staff = await cur.fetchone()
                 
@@ -148,7 +172,7 @@ async def assign_ticket(
                     RETURNING ticket_id, student_id, title, description, category,
                               priority, room_number, status, assigned_to, created_at, updated_at
                     """,
-                    (assigned_to, ticket_id),
+                    (request_body.assigned_to, ticket_id),
                 )
                 ticket = await cur.fetchone()
                 await conn.commit()

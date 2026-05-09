@@ -18,7 +18,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
   const [error, setError] = useState<string | null>(null)
 
   // Login state
-  const [loginEmail, setLoginEmail] = useState('alex.rivers@hostel.edu')
+  const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
 
   // Register state
@@ -30,7 +30,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
 
   // Register OTP state
   const [registerOtpEmail, setRegisterOtpEmail] = useState('')
-  const [registerOtp, setRegisterOtp] = useState(['', '', '', ''])
+  const [registerOtp, setRegisterOtp] = useState(['', '', '', '', '', ''])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,13 +59,13 @@ export function LoginForm({ onLogin }: LoginFormProps) {
     setLoading(true)
 
     try {
-      const response = await authApi.register(
-        registerEmail,
-        registerPassword,
-        registerFullName,
-        registerStudentId,
-        registerRoomNumber
-      )
+      const response = await authApi.register({
+        display_name: registerFullName,
+        email: registerEmail,
+        password: registerPassword,
+        student_id: registerStudentId,
+        room_number: registerRoomNumber,
+      })
       if (response.data.success) {
         setRegisterOtpEmail(registerEmail)
         setFormView('register-otp')
@@ -96,7 +96,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
         setRegisterFullName('')
         setRegisterStudentId('')
         setRegisterRoomNumber('')
-        setRegisterOtp(['', '', '', ''])
+        setRegisterOtp(['', '', '', '', '', ''])
       } else {
         setError(response.data.message || 'OTP verification failed')
       }
@@ -195,17 +195,18 @@ export function LoginForm({ onLogin }: LoginFormProps) {
       </div>
 
       {/* RIGHT PANEL: Login/Register Interface */}
-      <div className="w-full lg:w-2/5 h-full bg-white shadow-[-20px_0_40px_rgba(0,0,0,0.02)] flex flex-col justify-center px-8 sm:px-16 relative z-20 overflow-y-auto">
+      <div className="w-full lg:w-2/5 bg-white shadow-[-20px_0_40px_rgba(0,0,0,0.02)] flex flex-col justify-center px-8 sm:px-16 relative z-20 overflow-y-auto h-screen">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.3 }}
-          className="w-full max-w-sm mx-auto py-10"
+          className="w-full max-w-sm mx-auto py-10 h-[stretch]"
         >
           {/* Tab Switcher */}
           {formView !== 'register-otp' && (
-            <div className="flex gap-4 mb-10 border-b border-[#F0F0EE]">
+            <div className="sticky top-0 z-10 flex gap-4 mb-10 border-b border-[#F0F0EE] bg-white">
               <button
+                type="button"
                 onClick={() => setFormView('login')}
                 className={`pb-3 text-sm font-bold uppercase tracking-wide transition-all ${
                   formView === 'login'
@@ -216,6 +217,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                 Log In
               </button>
               <button
+                type="button"
                 onClick={() => setFormView('register')}
                 className={`pb-3 text-sm font-bold uppercase tracking-wide transition-all ${
                   formView === 'register'
@@ -294,14 +296,14 @@ export function LoginForm({ onLogin }: LoginFormProps) {
           {/* REGISTER VIEW */}
           {formView === 'register' && (
             <>
-              <div className="mb-10">
+              <div className="mb-6">
                 <h3 className="text-2xl font-bold text-[#4D5D53] mb-2 uppercase tracking-tight">Create Account</h3>
                 <p className="text-[#9A9A9A] text-sm">Fill in your details to get started.</p>
               </div>
 
-              <form className="space-y-6" onSubmit={handleRegister}>
+              <form className="space-y-4 h-[stretch]" onSubmit={handleRegister}>
                 <div>
-                  <label className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD] mb-4">Full Name</label>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD] mb-3">Full Name</label>
                   <div className="relative group/field">
                     <input 
                       type="text" 
@@ -309,13 +311,13 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                       value={registerFullName}
                       onChange={(e) => setRegisterFullName(e.target.value)}
                       required
-                      className="w-full px-6 py-5 rounded-3xl bg-[#FAF9F6] border-2 border-transparent focus:border-[#D4A373] focus:bg-white focus:ring-8 focus:ring-[#D4A373]/5 outline-none transition-all placeholder:text-[#BDBDBD] text-base font-bold tracking-tight hover:bg-[#FAF9F6]/50"
+                      className="w-full px-6 py-4 rounded-3xl bg-[#FAF9F6] border-2 border-transparent focus:border-[#D4A373] focus:bg-white focus:ring-8 focus:ring-[#D4A373]/5 outline-none transition-all placeholder:text-[#BDBDBD] text-base font-bold tracking-tight hover:bg-[#FAF9F6]/50"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD] mb-4">Email Address</label>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD] mb-3">Email Address</label>
                   <div className="relative group/field">
                     <Mail className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-[#BDBDBD] group-focus-within/field:text-[#D4A373] transition-colors" />
                     <input 
@@ -324,37 +326,37 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                       value={registerEmail}
                       onChange={(e) => setRegisterEmail(e.target.value)}
                       required
-                      className="w-full pl-14 pr-6 py-5 rounded-3xl bg-[#FAF9F6] border-2 border-transparent focus:border-[#D4A373] focus:bg-white focus:ring-8 focus:ring-[#D4A373]/5 outline-none transition-all placeholder:text-[#BDBDBD] text-base font-bold tracking-tight hover:bg-[#FAF9F6]/50"
+                      className="w-full pl-14 pr-6 py-4 rounded-3xl bg-[#FAF9F6] border-2 border-transparent focus:border-[#D4A373] focus:bg-white focus:ring-8 focus:ring-[#D4A373]/5 outline-none transition-all placeholder:text-[#BDBDBD] text-base font-bold tracking-tight hover:bg-[#FAF9F6]/50"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD] mb-4">Student ID</label>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD] mb-3">Student ID</label>
                   <input 
                     type="text" 
                     placeholder="e.g., 21-0001" 
                     value={registerStudentId}
                     onChange={(e) => setRegisterStudentId(e.target.value)}
                     required
-                    className="w-full px-6 py-5 rounded-3xl bg-[#FAF9F6] border-2 border-transparent focus:border-[#D4A373] focus:bg-white focus:ring-8 focus:ring-[#D4A373]/5 outline-none transition-all placeholder:text-[#BDBDBD] text-base font-bold tracking-tight hover:bg-[#FAF9F6]/50"
+                    className="w-full px-6 py-4 rounded-3xl bg-[#FAF9F6] border-2 border-transparent focus:border-[#D4A373] focus:bg-white focus:ring-8 focus:ring-[#D4A373]/5 outline-none transition-all placeholder:text-[#BDBDBD] text-base font-bold tracking-tight hover:bg-[#FAF9F6]/50"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD] mb-4">Room Number</label>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD] mb-3">Room Number</label>
                   <input 
                     type="text" 
                     placeholder="e.g., A-101" 
                     value={registerRoomNumber}
                     onChange={(e) => setRegisterRoomNumber(e.target.value)}
                     required
-                    className="w-full px-6 py-5 rounded-3xl bg-[#FAF9F6] border-2 border-transparent focus:border-[#D4A373] focus:bg-white focus:ring-8 focus:ring-[#D4A373]/5 outline-none transition-all placeholder:text-[#BDBDBD] text-base font-bold tracking-tight hover:bg-[#FAF9F6]/50"
+                    className="w-full px-6 py-4 rounded-3xl bg-[#FAF9F6] border-2 border-transparent focus:border-[#D4A373] focus:bg-white focus:ring-8 focus:ring-[#D4A373]/5 outline-none transition-all placeholder:text-[#BDBDBD] text-base font-bold tracking-tight hover:bg-[#FAF9F6]/50"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD] mb-4">Password</label>
+                  <label className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD] mb-3">Password</label>
                   <div className="relative group/field">
                     <Lock className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-[#BDBDBD] group-focus-within/field:text-[#D4A373] transition-colors" />
                     <input 
@@ -363,7 +365,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                       value={registerPassword}
                       onChange={(e) => setRegisterPassword(e.target.value)}
                       required
-                      className="w-full pl-14 pr-6 py-5 rounded-3xl bg-[#FAF9F6] border-2 border-transparent focus:border-[#D4A373] focus:bg-white focus:ring-8 focus:ring-[#D4A373]/5 outline-none transition-all placeholder:text-[#BDBDBD] text-base font-bold tracking-tight hover:bg-[#FAF9F6]/50"
+                      className="w-full pl-14 pr-6 py-4 rounded-3xl bg-[#FAF9F6] border-2 border-transparent focus:border-[#D4A373] focus:bg-white focus:ring-8 focus:ring-[#D4A373]/5 outline-none transition-all placeholder:text-[#BDBDBD] text-base font-bold tracking-tight hover:bg-[#FAF9F6]/50"
                     />
                   </div>
                 </div>
@@ -397,7 +399,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
             <>
               <div className="mb-10">
                 <h3 className="text-2xl font-bold text-[#4D5D53] mb-2 uppercase tracking-tight">Verify OTP</h3>
-                <p className="text-[#9A9A9A] text-sm">Enter the 4-digit code to verify your email.</p>
+                <p className="text-[#9A9A9A] text-sm">Enter the 6-digit code to verify your email.</p>
               </div>
 
               <form className="space-y-8" onSubmit={handleVerifyOtp}>
@@ -417,12 +419,12 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                           setRegisterOtp(newOtp)
                           
                           // Auto-focus next field
-                          if (e.target.value && i < 3) {
+                          if (e.target.value && i < 5) {
                             (document.querySelectorAll('input[maxLength="1"]')[i + 1] as HTMLInputElement)?.focus()
                           }
                         }}
                         placeholder="•"
-                        className={`flex-1 h-16 bg-[#FAF9F6] rounded-2xl text-center font-black text-2xl outline-none border-2 transition-all hover:bg-[#FAF9F6]/50 ${digit ? 'border-[#D4A373] bg-white shadow-lg shadow-[#D4A373]/10' : 'border-transparent focus:border-[#D4A373] focus:ring-8 focus:ring-[#D4A373]/5'}`}
+                        className={`flex-1 w-2 h-16 bg-[#FAF9F6] rounded-2xl text-center font-black text-2xl outline-none border-2 transition-all hover:bg-[#FAF9F6]/50 ${digit ? 'border-[#D4A373] bg-white shadow-lg shadow-[#D4A373]/10' : 'border-transparent focus:border-[#D4A373] focus:ring-8 focus:ring-[#D4A373]/5'}`}
                       />
                     ))}
                   </div>
@@ -436,12 +438,12 @@ export function LoginForm({ onLogin }: LoginFormProps) {
 
                 <motion.button 
                   type="submit"
-                  disabled={loading || registerOtp.join('').length !== 4}
+                  disabled={loading || registerOtp.join('').length !== 6}
                   whileHover={{ 
-                    backgroundColor: (loading || registerOtp.join('').length !== 4) ? undefined : '#3D4D43',
-                    y: (loading || registerOtp.join('').length !== 4) ? 0 : -1
+                    backgroundColor: (loading || registerOtp.join('').length !== 6) ? undefined : '#3D4D43',
+                    y: (loading || registerOtp.join('').length !== 6) ? 0 : -1
                   }}
-                  whileTap={{ scale: (loading || registerOtp.join('').length !== 4) ? 1 : 0.98 }}
+                  whileTap={{ scale: (loading || registerOtp.join('').length !== 6) ? 1 : 0.98 }}
                   className="w-full bg-[#404F46] text-white font-black py-6 rounded-[2rem] shadow-2xl shadow-[#4D5D53]/20 transition-all flex items-center justify-center gap-3 group relative overflow-hidden text-sm uppercase tracking-widest disabled:opacity-50"
                 >
                   <span className="relative z-10">{loading ? 'Verifying...' : 'Verify & Continue'}</span>

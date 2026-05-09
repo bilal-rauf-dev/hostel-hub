@@ -94,14 +94,8 @@ apiClient.interceptors.response.use(
 // AUTH API
 // ============================================
 export const authApi = {
-  register: async (email: string, password: string, display_name: string, student_id: string, contact_number?: string) => {
-    return apiClient.post('/api/v1/auth/register', {
-      email,
-      password,
-      display_name,
-      student_id,
-      contact_number,
-    })
+  register: async (payload: { display_name: string; email: string; password: string; student_id: string; room_number?: string; contact_number?: string }) => {
+    return apiClient.post('/api/v1/auth/register', payload)
   },
 
   verifyOtp: async (email: string, otp_code: string) => {
@@ -192,8 +186,10 @@ export const marketplaceApi = {
     return apiClient.delete(`/api/v1/marketplace/listings/${listing_id}`)
   },
 
-  placeOrder: async (listing_id: number) => {
-    return apiClient.post(`/api/v1/marketplace/listings/${listing_id}/order`)
+  placeOrder: async (listing_id: number, quantity: number = 1) => {
+    return apiClient.post(`/api/v1/marketplace/listings/${listing_id}/order`, {
+      quantity,
+    })
   },
 
   updateOrderStatus: async (order_id: number, status: string) => {

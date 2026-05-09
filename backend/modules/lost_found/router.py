@@ -1,7 +1,9 @@
-from typing import Any
+from datetime import date
+from typing import Any, Optional
 
 import psycopg
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from auth.dependencies import get_current_user
 from database.connection import get_db_pool
@@ -11,6 +13,17 @@ router = APIRouter(prefix="/api/v1/lost-found", tags=["lost-found"])
 
 def json_response(success: bool, data: Any = None, message: str = "") -> dict:
     return {"success": success, "data": data, "message": message}
+
+
+class PostLostFoundItemRequest(BaseModel):
+    item_type: str
+    description: str
+    location_tag: Optional[str] = None
+    location: Optional[str] = None
+    item_date: Optional[date] = None
+    is_anonymous: bool = False
+    image_url: Optional[str] = None
+    title: Optional[str] = None
 
 
 @router.get("/")
@@ -24,51 +37,74 @@ async def get_lost_found_items(
             async with conn.cursor(row_factory=dict) as cur:
                 await cur.execute(
                     """
-                    SELECT item_id, item_type, title, description, location,
-                           posted_date,
+                    SELECT lf.item_id, lf.item_type, lf.description, lf.location_tag,
+                           lf.item_date, lf.image_url, lf.is_anonymous, lf.is_archived,
                            CASE WHEN is_anonymous = TRUE THEN NULL ELSE posted_by END as reporter,
                            CASE WHEN is_anonymous = TRUE THEN 'Anonymous' ELSE u.display_name END as reporter_name,
-                           image_url, is_archived
                     FROM lost_found_items lf
                     LEFT JOIN users u ON lf.posted_by = u.user_id
                     WHERE is_archived = FALSE
-                    ORDER BY posted_date DESC
+                    ORDER BY lf.created_at DESC
                     """
                 )
                 items = await cur.fetchall()
+
+        normalized_items = []
+        for item in items:
+            normalized_items.append(
+                {
+                    **item,
+                    "title": item["description"],
+                    "location": item["location_tag"],
+                    "posted_date": item["item_date"],
+                }
+            )
         
-        return json_response(True, items, "Lost & found items retrieved successfully")
+        return json_response(True, normalized_items, "Lost & found items retrieved successfully")
     except Exception as e:
         return json_response(False, None, f"Failed to retrieve items: {str(e)}")
 
 
 @router.post("/")
 async def post_lost_found_item(
-    item_type: str,
-    title: str,
-    description: str,
-    location: str,
-    is_anonymous: bool = False,
-    image_url: str | None = None,
+    request_body: PostLostFoundItemRequest,
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
     """Post a lost or found item."""
     try:
+        location_tag = request_body.location_tag or request_body.location
+        title = request_body.title or request_body.description
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict) as cur:
                 await cur.execute(
                     """
                     INSERT INTO lost_found_items
-                    (item_type, title, description, location, posted_by, is_anonymous, image_url)
+                    (item_type, description, location_tag, item_date, posted_by, is_anonymous, image_url)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    RETURNING item_id, item_type, title, description, location,
-                              posted_date, posted_by, is_anonymous, image_url
+                    RETURNING item_id, item_type, description, location_tag,
+                              item_date, posted_by, is_anonymous, image_url
                     """,
-                    (item_type, title, description, location, user["user_id"], is_anonymous, image_url),
+                    (
+                        request_body.item_type,
+                        request_body.description,
+                        location_tag,
+                        request_body.item_date,
+                        user["user_id"],
+                        request_body.is_anonymous,
+                        request_body.image_url,
+                    ),
                 )
                 item = await cur.fetchone()
                 await conn.commit()
+
+        if item:
+            item = {
+                **item,
+                "title": title,
+                "location": location_tag,
+                "posted_date": item["item_date"],
+            }
         
         return json_response(True, item, "Lost & found item posted successfully")
     except Exception as e:
@@ -104,13 +140,21 @@ async def archive_item(
                     UPDATE lost_found_items
                     SET is_archived = TRUE
                     WHERE item_id = %s
-                    RETURNING item_id, item_type, title, description, location,
-                              posted_date, posted_by, is_anonymous, image_url, is_archived
+                    RETURNING item_id, item_type, description, location_tag,
+                              item_date, posted_by, is_anonymous, image_url, is_archived
                     """,
                     (item_id,),
                 )
                 archived_item = await cur.fetchone()
                 await conn.commit()
+
+        if archived_item:
+            archived_item = {
+                **archived_item,
+                "title": archived_item["description"],
+                "location": archived_item["location_tag"],
+                "posted_date": archived_item["item_date"],
+            }
         
         return json_response(True, archived_item, "Item archived successfully")
     except Exception as e:

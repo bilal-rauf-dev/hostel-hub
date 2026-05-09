@@ -1,5 +1,7 @@
 from typing import Any
 
+from psycopg.rows import dict_row
+
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -27,7 +29,7 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token payload") from exc
 
     async with pool.connection() as conn:
-        async with conn.cursor(row_factory=dict) as cur:
+        async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
                 """
                 SELECT user_id, email, student_id, display_name, profile_picture,

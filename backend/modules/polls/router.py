@@ -2,6 +2,7 @@ from typing import Any
 
 import psycopg
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from auth.dependencies import get_current_user, require_admin
 from database.connection import get_db_pool
@@ -11,6 +12,16 @@ router = APIRouter(prefix="/api/v1/polls", tags=["polls"])
 
 def json_response(success: bool, data: Any = None, message: str = "") -> dict:
     return {"success": success, "data": data, "message": message}
+
+
+class CreatePollRequest(BaseModel):
+    question: str
+    options: list[str]
+    deadline: str
+
+
+class CastVoteRequest(BaseModel):
+    option_id: int
 
 
 @router.get("/")
@@ -39,9 +50,7 @@ async def get_polls(
 
 @router.post("/")
 async def create_poll(
-    question: str,
-    options: list[str],
-    deadline: str,
+    request_body: CreatePollRequest,
     admin: dict = Depends(require_admin),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -56,7 +65,7 @@ async def create_poll(
                     VALUES (%s, %s, %s)
                     RETURNING poll_id, question, deadline, created_at, created_by
                     """,
-                    (question, deadline, admin["user_id"]),
+                    (request_body.question, request_body.deadline, admin["user_id"]),
                 )
                 poll = await cur.fetchone()
                 
@@ -64,7 +73,7 @@ async def create_poll(
                 
                 # Insert options
                 poll_options = []
-                for option_text in options:
+                for option_text in request_body.options:
                     await cur.execute(
                         """
                         INSERT INTO poll_options (poll_id, option_text)
@@ -89,7 +98,7 @@ async def create_poll(
 @router.post("/{poll_id}/vote")
 async def cast_vote(
     poll_id: int,
-    option_id: int,
+    request_body: CastVoteRequest,
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -100,9 +109,14 @@ async def cast_vote(
                 # Call stored procedure: SELECT * FROM cast_vote($1, $2, $3)
                 await cur.execute(
                     """
-                    SELECT * FROM cast_vote(%s, %s, %s)
+                    SELECT * FROM cast_vote(
+                      %s,
+                      %s,
+                      %s
+                    )
                     """,
-                    (poll_id, option_id, user["user_id"]),
+                    # function signature: (p_poll_id INT, p_user_id INT, p_option_id INT)
+                    (poll_id, user["user_id"], request_body.option_id),
                 )
                 result = await cur.fetchone()
                 await conn.commit()

@@ -1,7 +1,8 @@
-from typing import Any
+from typing import Any, Optional
 
 import psycopg
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from auth.dependencies import get_current_user, require_admin
 from database.connection import get_db_pool
@@ -11,6 +12,20 @@ router = APIRouter(prefix="/api/v1/guidebook", tags=["guidebook"])
 
 def json_response(success: bool, data: Any = None, message: str = "") -> dict:
     return {"success": success, "data": data, "message": message}
+
+
+class CreateGuidebookEntryRequest(BaseModel):
+    title: str
+    content: str
+    category: str
+    icon_url: Optional[str] = None
+
+
+class UpdateGuidebookEntryRequest(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    category: Optional[str] = None
+    icon_url: Optional[str] = None
 
 
 @router.get("/")
@@ -38,10 +53,7 @@ async def get_guidebook_entries(
 
 @router.post("/")
 async def create_guidebook_entry(
-    title: str,
-    content: str,
-    category: str,
-    icon_url: str | None = None,
+    request_body: CreateGuidebookEntryRequest,
     admin: dict = Depends(require_admin),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -55,7 +67,12 @@ async def create_guidebook_entry(
                     VALUES (%s, %s, %s, %s)
                     RETURNING entry_id, title, content, category, icon_url, created_at, updated_at
                     """,
-                    (title, content, category, icon_url),
+                    (
+                        request_body.title,
+                        request_body.content,
+                        request_body.category,
+                        request_body.icon_url,
+                    ),
                 )
                 entry = await cur.fetchone()
                 await conn.commit()
@@ -68,10 +85,7 @@ async def create_guidebook_entry(
 @router.patch("/{entry_id}")
 async def update_guidebook_entry(
     entry_id: int,
-    title: str | None = None,
-    content: str | None = None,
-    category: str | None = None,
-    icon_url: str | None = None,
+    request_body: UpdateGuidebookEntryRequest,
     admin: dict = Depends(require_admin),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -81,18 +95,18 @@ async def update_guidebook_entry(
         updates = []
         params = []
         
-        if title is not None:
+        if request_body.title is not None:
             updates.append("title = %s")
-            params.append(title)
-        if content is not None:
+            params.append(request_body.title)
+        if request_body.content is not None:
             updates.append("content = %s")
-            params.append(content)
-        if category is not None:
+            params.append(request_body.content)
+        if request_body.category is not None:
             updates.append("category = %s")
-            params.append(category)
-        if icon_url is not None:
+            params.append(request_body.category)
+        if request_body.icon_url is not None:
             updates.append("icon_url = %s")
-            params.append(icon_url)
+            params.append(request_body.icon_url)
         
         if not updates:
             return json_response(False, None, "No fields to update")

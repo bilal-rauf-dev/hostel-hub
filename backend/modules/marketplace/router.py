@@ -1,7 +1,8 @@
-from typing import Any
+from typing import Any, Optional
 
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from pydantic import BaseModel
 
 from auth.dependencies import get_current_user
 from database.connection import get_db_pool
@@ -11,6 +12,30 @@ router = APIRouter(prefix="/api/v1/marketplace", tags=["marketplace"])
 
 def json_response(success: bool, data: Any = None, message: str = "") -> dict:
     return {"success": success, "data": data, "message": message}
+
+
+class CreateListingRequest(BaseModel):
+    title: str
+    description: str
+    category: str
+    price: float
+    image_url: Optional[str] = None
+
+
+class UpdateListingRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[float] = None
+    image_url: Optional[str] = None
+
+
+class PlaceOrderRequest(BaseModel):
+    quantity: int
+
+
+class UpdateOrderStatusRequest(BaseModel):
+    status: str
 
 
 @router.get("/listings")
@@ -70,11 +95,7 @@ async def get_listings(
 
 @router.post("/listings")
 async def create_listing(
-    title: str,
-    description: str,
-    category: str,
-    price: float,
-    image_url: str | None = None,
+    request_body: CreateListingRequest,
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -90,7 +111,14 @@ async def create_listing(
                     RETURNING listing_id, seller_id, title, description, category,
                               price, image_url, status, created_at
                     """,
-                    (user["user_id"], title, description, category, price, image_url),
+                    (
+                        user["user_id"],
+                        request_body.title,
+                        request_body.description,
+                        request_body.category,
+                        request_body.price,
+                        request_body.image_url,
+                    ),
                 )
                 listing = await cur.fetchone()
                 await conn.commit()
@@ -103,11 +131,7 @@ async def create_listing(
 @router.patch("/listings/{listing_id}")
 async def update_listing(
     listing_id: int,
-    title: str | None = None,
-    description: str | None = None,
-    category: str | None = None,
-    price: float | None = None,
-    image_url: str | None = None,
+    request_body: UpdateListingRequest,
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -132,21 +156,21 @@ async def update_listing(
                 updates = []
                 params = []
                 
-                if title is not None:
+                if request_body.title is not None:
                     updates.append("title = %s")
-                    params.append(title)
-                if description is not None:
+                    params.append(request_body.title)
+                if request_body.description is not None:
                     updates.append("description = %s")
-                    params.append(description)
-                if category is not None:
+                    params.append(request_body.description)
+                if request_body.category is not None:
                     updates.append("category = %s")
-                    params.append(category)
-                if price is not None:
+                    params.append(request_body.category)
+                if request_body.price is not None:
                     updates.append("price = %s")
-                    params.append(price)
-                if image_url is not None:
+                    params.append(request_body.price)
+                if request_body.image_url is not None:
                     updates.append("image_url = %s")
-                    params.append(image_url)
+                    params.append(request_body.image_url)
                 
                 if not updates:
                     return json_response(False, None, "No fields to update")
@@ -214,6 +238,7 @@ async def delete_listing(
 @router.post("/listings/{listing_id}/order")
 async def place_order(
     listing_id: int,
+    request_body: PlaceOrderRequest,
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -221,16 +246,20 @@ async def place_order(
     try:
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict) as cur:
-                # Call stored procedure: SELECT * FROM place_order($1, $2, $3)
-                await cur.execute(
-                    """
-                    SELECT * FROM place_order(%s, %s, %s)
-                    """,
-                    (listing_id, user["user_id"], None),  # $3 would be delivery_date if needed
-                )
-                result = await cur.fetchone()
-                await conn.commit()
-        
+                                # Call stored procedure: SELECT * FROM place_order($1, $2, $3)
+                                await cur.execute(
+                                        """
+                                        SELECT * FROM place_order(
+                                            %s,
+                                            %s,
+                                            %s
+                                        )
+                                        """,
+                                        (listing_id, user["user_id"], request_body.quantity),
+                                )
+                                result = await cur.fetchone()
+                                await conn.commit()
+
         if result and result.get("order_id"):
             return json_response(True, result, "Order placed successfully")
         else:
@@ -247,7 +276,7 @@ async def place_order(
 @router.patch("/orders/{order_id}/status")
 async def update_order_status(
     order_id: int,
-    status: str,
+    request_body: UpdateOrderStatusRequest,
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -280,7 +309,7 @@ async def update_order_status(
                     WHERE order_id = %s
                     RETURNING order_id, buyer_id, seller_id, listing_id, status, created_at, updated_at
                     """,
-                    (status, order_id),
+                    (request_body.status, order_id),
                 )
                 updated_order = await cur.fetchone()
                 await conn.commit()

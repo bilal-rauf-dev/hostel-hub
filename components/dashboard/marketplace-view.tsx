@@ -262,7 +262,7 @@ export function MarketplaceView() {
                       Limited Stock
                     </div>
                     <div>
-                      <button onClick={async () => { try { await marketplaceApi.placeOrder(product.listing_id || product.id); pushToast('Order placed', 'success'); } catch (err) { pushToast('Failed to place order', 'error') } }} className="w-10 h-10 bg-[#FAF9F6] rounded-xl flex items-center justify-center text-[#BDBDBD] border border-[#EFEFE9] group-hover:bg-[#D4A373] group-hover:text-white group-hover:border-[#D4A373] group-hover:rotate-12 transition-all duration-500">
+                      <button onClick={async () => { try { await marketplaceApi.placeOrder(product.listing_id || product.id, 1); pushToast('Order placed', 'success'); } catch (err) { pushToast('Failed to place order', 'error') } }} className="w-10 h-10 bg-[#FAF9F6] rounded-xl flex items-center justify-center text-[#BDBDBD] border border-[#EFEFE9] group-hover:bg-[#D4A373] group-hover:text-white group-hover:border-[#D4A373] group-hover:rotate-12 transition-all duration-500">
                         <ArrowUpRight className="h-5 w-5" />
                       </button>
                     </div>

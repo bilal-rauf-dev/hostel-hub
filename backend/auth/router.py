@@ -1,14 +1,16 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg import sql
+from psycopg.rows import dict_row
 
 from auth.dependencies import get_current_user
 from auth.utils import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from core.config import settings
 from database.connection import get_db_pool
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -17,75 +19,97 @@ def json_response(success: bool, data: Any = None, message: str = "") -> dict:
     return {"success": success, "data": data, "message": message}
 
 
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    display_name: str
+    student_id: str
+    room_number: str
+    contact_number: Optional[str] = None
+
+
 @router.post("/register")
 async def register(
-    email: str,
-    password: str,
-    display_name: str,
-    student_id: str,
-    contact_number: str | None = None,
+    request_body: RegisterRequest,
     pool=Depends(get_db_pool),
 ) -> dict:
     """Register a new user. Calls the register_user stored procedure."""
+    # Debug: print incoming payload
+    print("Register payload:", request_body.model_dump())
+
+    if len(request_body.password) > 72:
+        return json_response(False, None, "Password cannot be longer than 72 characters")
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
-                # Call stored procedure: SELECT * FROM register_user($1, $2, $3, $4, $5)
-                password_hash = hash_password(password)
-                await cur.execute(
-                    """
+            async with conn.cursor(row_factory=dict_row) as cursor:
+                hashed_password = hash_password(request_body.password)
+                query = """
                     SELECT * FROM register_user(%s, %s, %s, %s, %s)
-                    """,
-                    (email, password_hash, display_name, student_id, contact_number or ""),
+                """
+                params = (
+                    request_body.email,
+                    request_body.student_id,
+                    request_body.display_name,
+                    hashed_password,
+                    request_body.room_number,
                 )
-                result = await cur.fetchone()
-                
-        if not result or not result.get("user_id"):
-            return json_response(
-                False,
-                None,
-                "Failed to create user"
-            )
-        
-        # Generate OTP code for response (in production, would email this)
-        otp_code = "1234"  # Placeholder - in production would be random 4-digit
-        
+                await cursor.execute(query, params)
+                row = await cursor.fetchone()
+                print("Register row:", row)
+
+                if not row or not row.get("user_id"):
+                    return json_response(False, None, row.get("result") if row else "Registration failed")
+
+                await conn.commit()
+
+                await cursor.execute(
+                    "SELECT otp_code FROM otp_verifications WHERE email = %s AND is_used = FALSE ORDER BY otp_id DESC LIMIT 1",
+                    (request_body.email,)
+                )
+                otp_row = await cursor.fetchone()
+                otp_code = otp_row["otp_code"] if otp_row else "000000"
+
         return json_response(
             True,
             {
-                "user_id": result.get("user_id"),
-                "email": result.get("email"),
-                "otp_code": otp_code,  # Return OTP for development (no email service)
+                "user_id": row["user_id"],
+                "otp_code": otp_code,
                 "message": "Registration successful. Verify your OTP to complete signup."
             },
             "Registration successful"
         )
-    except psycopg.errors.UniqueViolation as e:
+    except psycopg.errors.UniqueViolation:
         return json_response(False, None, "Email already registered")
     except Exception as e:
         return json_response(False, None, f"Registration failed: {str(e)}")
 
+class VerifyOtpRequest(BaseModel):
+    email: str
+    otp_code: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 @router.post("/verify-otp")
 async def verify_otp(
-    email: str,
-    otp_code: str,
+    request_body: VerifyOtpRequest,
     pool=Depends(get_db_pool),
 ) -> dict:
     """Verify OTP and mark user as verified."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Check if OTP is valid
                 await cur.execute(
                     """
-                    SELECT otp_id, user_id FROM otp_verifications
+                    SELECT otp_id FROM otp_verifications
                     WHERE email = %s AND otp_code = %s 
                       AND is_used = FALSE 
                       AND expires_at > NOW()
                     LIMIT 1
                     """,
-                    (email, otp_code),
+                    (request_body.email, request_body.otp_code),
                 )
                 otp_record = await cur.fetchone()
                 
@@ -100,27 +124,29 @@ async def verify_otp(
                 
                 # Mark user as verified
                 await cur.execute(
-                    "UPDATE users SET is_verified = TRUE WHERE user_id = %s",
-                    (otp_record["user_id"],),
+                    "UPDATE users SET is_verified = TRUE WHERE email = %s",
+                    (request_body.email,),
                 )
                 
                 await conn.commit()
         
-        return json_response(True, {"email": email}, "OTP verified successfully")
+        return json_response(True, {"email": request_body.email}, "OTP verified successfully")
     except Exception as e:
         return json_response(False, None, f"OTP verification failed: {str(e)}")
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 @router.post("/login")
 async def login(
-    email: str,
-    password: str,
+    request_body: LoginRequest,
     pool=Depends(get_db_pool),
 ) -> dict:
     """Login with email and password. Returns access and refresh tokens."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict) as cur:
+            async with conn.cursor(row_factory=dict_row) as cur:
                 # Get user by email
                 await cur.execute(
                     """
@@ -129,7 +155,7 @@ async def login(
                     FROM users
                     WHERE email = %s
                     """,
-                    (email,),
+                    (request_body.email,),
                 )
                 user = await cur.fetchone()
         
@@ -137,7 +163,7 @@ async def login(
             raise HTTPException(status_code=401, detail="Invalid email or password")
         
         # Verify password
-        if not verify_password(password, user["password_hash"]):
+        if not verify_password(request_body.password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="Invalid email or password")
         
         # Check if verified
@@ -182,11 +208,11 @@ async def login(
 
 @router.post("/refresh")
 async def refresh_token(
-    refresh_token: str,
+    request_body: RefreshTokenRequest,
 ) -> dict:
     """Issue a new access token using refresh token."""
     try:
-        payload = decode_token(refresh_token)
+        payload = decode_token(request_body.refresh_token)
         
         token_data = {
             "sub": payload.get("sub"),

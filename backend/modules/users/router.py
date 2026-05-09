@@ -1,7 +1,8 @@
-from typing import Any
+from typing import Any, Optional
 
 import psycopg
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from auth.dependencies import get_current_user, require_admin
 from database.connection import get_db_pool
@@ -11,6 +12,13 @@ router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
 def json_response(success: bool, data: Any = None, message: str = "") -> dict:
     return {"success": success, "data": data, "message": message}
+
+
+class UpdateProfileRequest(BaseModel):
+    display_name: Optional[str] = None
+    contact_number: Optional[str] = None
+    profile_picture: Optional[str] = None
+    room_number: Optional[str] = None
 
 
 @router.get("/me")
@@ -44,10 +52,7 @@ async def get_current_user_profile(
 
 @router.patch("/me")
 async def update_current_user_profile(
-    display_name: str | None = None,
-    contact_number: str | None = None,
-    profile_picture: str | None = None,
-    room_number: str | None = None,
+    request_body: UpdateProfileRequest,
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -57,21 +62,21 @@ async def update_current_user_profile(
         updates = []
         params = []
         
-        if display_name is not None:
+        if request_body.display_name is not None:
             updates.append("display_name = %s")
-            params.append(display_name)
+            params.append(request_body.display_name)
         
-        if contact_number is not None:
+        if request_body.contact_number is not None:
             updates.append("contact_number = %s")
-            params.append(contact_number)
+            params.append(request_body.contact_number)
         
-        if profile_picture is not None:
+        if request_body.profile_picture is not None:
             updates.append("profile_picture = %s")
-            params.append(profile_picture)
+            params.append(request_body.profile_picture)
 
-        if room_number is not None:
+        if request_body.room_number is not None:
             updates.append("room_number = %s")
-            params.append(room_number)
+            params.append(request_body.room_number)
         
         if not updates:
             return json_response(False, None, "No fields to update")

@@ -1,7 +1,8 @@
-from typing import Any
+from typing import Any, Optional
 
 import psycopg
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from auth.dependencies import get_current_user, require_admin
 from database.connection import get_db_pool
@@ -11,6 +12,18 @@ router = APIRouter(prefix="/api/v1/events", tags=["events"])
 
 def json_response(success: bool, data: Any = None, message: str = "") -> dict:
     return {"success": success, "data": data, "message": message}
+
+
+class CreateEventRequest(BaseModel):
+    title: str
+    description: str
+    location: str
+    event_date: str
+    image_url: Optional[str] = None
+
+
+class RSVPEventRequest(BaseModel):
+    status: str
 
 
 @router.get("/")
@@ -40,11 +53,7 @@ async def get_events(
 
 @router.post("/")
 async def create_event(
-    title: str,
-    description: str,
-    location: str,
-    event_date: str,
-    image_url: str | None = None,
+    request_body: CreateEventRequest,
     admin: dict = Depends(require_admin),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -58,7 +67,14 @@ async def create_event(
                     VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING event_id, title, description, location, event_date, image_url, created_by, created_at
                     """,
-                    (title, description, location, event_date, image_url, admin["user_id"]),
+                    (
+                        request_body.title,
+                        request_body.description,
+                        request_body.location,
+                        request_body.event_date,
+                        request_body.image_url,
+                        admin["user_id"],
+                    ),
                 )
                 event = await cur.fetchone()
                 await conn.commit()
@@ -71,7 +87,7 @@ async def create_event(
 @router.post("/{event_id}/rsvp")
 async def rsvp_event(
     event_id: int,
-    status: str,
+    request_body: RSVPEventRequest,
     user: dict = Depends(get_current_user),
     pool=Depends(get_db_pool),
 ) -> dict:
@@ -86,7 +102,7 @@ async def rsvp_event(
                     ON CONFLICT (event_id, user_id) DO UPDATE SET status = %s
                     RETURNING rsvp_id, event_id, user_id, status, created_at
                     """,
-                    (event_id, user["user_id"], status, status),
+                    (event_id, user["user_id"], request_body.status, request_body.status),
                 )
                 rsvp = await cur.fetchone()
                 await conn.commit()
