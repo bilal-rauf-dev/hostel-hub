@@ -137,11 +137,12 @@ export const usersApi = {
     return apiClient.get('/api/v1/users/me')
   },
 
-  updateMe: async (display_name?: string, contact_number?: string, profile_picture?: string) => {
+  updateMe: async (display_name?: string, contact_number?: string, profile_picture?: string, room_number?: string) => {
     return apiClient.patch('/api/v1/users/me', {
       display_name,
       contact_number,
       profile_picture,
+      room_number,
     })
   },
 
@@ -368,7 +369,7 @@ export const safetyAlertsApi = {
     return apiClient.get('/api/v1/safety-alerts/')
   },
 
-  createAlert: async (payload: { message: string, target: string, level?: string, is_active?: boolean }) => {
+  createAlert: async (payload: { title: string, body: string, severity?: string }) => {
     return apiClient.post('/api/v1/safety-alerts/', payload)
   },
   toggleAlert: async (id: number) => {

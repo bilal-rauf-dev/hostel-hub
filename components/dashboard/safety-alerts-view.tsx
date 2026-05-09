@@ -24,6 +24,12 @@ export function SafetyAlertsView() {
    const [error, setError] = useState<string|null>(null)
    const [message, setMessage] = useState('')
    const [sending, setSending] = useState(false)
+   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
+
+   const pushToast = (message: string, type: 'success' | 'error') => {
+      setToast({ message, type })
+      setTimeout(() => setToast(null), 3000)
+   }
 
    useEffect(()=>{
       let mounted = true
@@ -54,6 +60,12 @@ export function SafetyAlertsView() {
         </div>
       </div>
 
+         {toast && (
+            <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+               {toast.message}
+            </div>
+         )}
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
         {/* Left Column: Composer */}
         <div className="space-y-8">
@@ -61,7 +73,7 @@ export function SafetyAlertsView() {
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-4">Compose Alert</h4>
                 <div className="p-1 bg-[#FAF9F6] rounded-[2rem] flex gap-1">
-                   {['All', 'Block A', 'Block B', 'Staff Only'].map(m => (
+                     {['All', 'Block A', 'Block B', 'Staff Only'].map(m => (
                      <button 
                        key={m}
                        onClick={() => setSelectedMethod(m)}
@@ -110,12 +122,16 @@ export function SafetyAlertsView() {
                      <button onClick={async ()=>{
                         try{
                            setSending(true)
-                           await safetyAlertsApi.createAlert({ message, target: selectedMethod, level: 'critical', is_active: true })
+                           await safetyAlertsApi.createAlert({
+                             title: selectedMethod === 'All' ? 'Hostel Alert' : `${selectedMethod} Alert`,
+                             body: message,
+                             severity: 'critical',
+                           })
                            setMessage('')
                            const r = await safetyAlertsApi.getAlerts()
                            if (r.data?.success) setAlerts(r.data.data || [])
-                           alert('Alert broadcasted')
-                        }catch(e){ console.error(e); alert('Failed to broadcast') }
+                           pushToast('Alert broadcasted', 'success')
+                        }catch(e){ console.error(e); pushToast('Failed to broadcast', 'error') }
                         finally{ setSending(false) }
                      }} className="w-full py-5 bg-red-500 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-red-600 transition-all shadow-xl shadow-red-500/20">
                          <Send className="h-4 w-4" />
@@ -133,9 +149,9 @@ export function SafetyAlertsView() {
               </div>
               
                      <div className="space-y-4">
-                        {(alerts || []).map((alert, idx) => (
+                        {(alerts || []).map((item, idx) => (
                            <motion.div
-                              key={alert.id || idx}
+                           key={item.id || idx}
                               initial={{ opacity: 0, x: 20 }}
                               animate={{ opacity: 1, x: 0 }}
                               transition={{ delay: idx * 0.1 }}
@@ -143,26 +159,26 @@ export function SafetyAlertsView() {
                            >
                               <div className="flex items-center justify-between mb-3">
                                   <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                                     alert.level === 'critical' || alert.type === 'Critical' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'
+                                     item.level === 'critical' || item.type === 'Critical' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'
                                   }`}>
-                                     {alert.level || alert.type}
+                                     {item.level || item.type}
                                   </span>
-                                  <span className="text-[10px] font-bold text-[#BDBDBD]">{alert.time || alert.created_at}</span>
+                                  <span className="text-[10px] font-bold text-[#BDBDBD]">{item.time || item.created_at}</span>
                               </div>
-                              <p className="text-sm font-bold text-[#4D5D53] leading-relaxed mb-4">{alert.message || alert.msg}</p>
+                              <p className="text-sm font-bold text-[#4D5D53] leading-relaxed mb-4">{item.message || item.body || item.msg}</p>
                               <div className="flex items-center justify-between pt-4 border-t border-black/5">
                                   <div className="flex items-center gap-2">
                                        <BellRing className="h-3 w-3 text-[#BDBDBD]" />
-                                       <span className="text-[10px] font-black text-[#BDBDBD] uppercase tracking-widest">{alert.target || alert.method || 'All'}</span>
+                                       <span className="text-[10px] font-black text-[#BDBDBD] uppercase tracking-widest">{item.target || item.method || 'All'}</span>
                                   </div>
                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                        <button onClick={async ()=>{
                                          try{
-                                           await safetyAlertsApi.toggleAlert(alert.alert_id || alert.id)
+                                           await safetyAlertsApi.toggleAlert(item.alert_id || item.id)
                                            const r = await safetyAlertsApi.getAlerts()
                                            if (r.data?.success) setAlerts(r.data.data || [])
-                                           alert('Alert updated')
-                                         }catch(e:any){ console.error(e); alert('Failed to update alert') }
+                                           pushToast('Alert updated', 'success')
+                                         }catch(e:any){ console.error(e); pushToast('Failed to update alert', 'error') }
                                        }} className="text-[10px] font-black text-red-400 flex items-center gap-1">
                                           <Trash2 className="h-3 w-3" />
                                           Void

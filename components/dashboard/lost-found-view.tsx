@@ -25,6 +25,7 @@ export function LostAndFoundView() {
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
   const [showReportModal, setShowReportModal] = useState(false)
   const [reportType, setReportType] = useState<'Lost'|'Found'>('Lost')
   const [reportTitle, setReportTitle] = useState('')
@@ -33,6 +34,11 @@ export function LostAndFoundView() {
   const [reportDate, setReportDate] = useState('')
   const [reportAnonymous, setReportAnonymous] = useState(false)
   const [reportSubmitting, setReportSubmitting] = useState(false)
+
+  const pushToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   useEffect(() => {
     let mounted = true
@@ -77,8 +83,8 @@ export function LostAndFoundView() {
       setReportLocation('')
       setReportDate('')
       setReportAnonymous(false)
-      alert('Report submitted')
-    } catch (e) { console.error(e); alert('Failed to submit report') }
+      pushToast('Report submitted', 'success')
+    } catch (e) { console.error(e); pushToast('Failed to submit report', 'error') }
     finally { setReportSubmitting(false) }
   }
 
@@ -104,6 +110,12 @@ export function LostAndFoundView() {
           Report Item
         </motion.button>
       </div>
+
+      {toast && (
+        <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+          {toast.message}
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-3xl border border-[#F0F0EE] shadow-sm">
         <div className="flex gap-2">

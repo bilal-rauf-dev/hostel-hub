@@ -21,6 +21,12 @@ export function EventsView() {
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('All')
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
+
+  const pushToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   useEffect(() => {
     let mounted = true
@@ -44,8 +50,8 @@ export function EventsView() {
   const handleRsvp = async (event_id: number) => {
     try {
       await eventsApi.rsvpEvent(event_id, 'going')
-      alert('RSVP saved')
-    } catch (err) { alert('Failed to RSVP') }
+      pushToast('RSVP saved', 'success')
+    } catch (err) { pushToast('Failed to RSVP', 'error') }
   }
 
   function CreateEventForm({ onDone, onCancel }: { onDone: (s:boolean)=>void, onCancel: ()=>void }){
@@ -57,9 +63,11 @@ export function EventsView() {
     const submit = async () => {
       try {
         setSubmitting(true)
-        await eventsApi.createEvent({ title, date, time, location })
+        const eventDate = date && time ? `${date}T${time}` : date || time || ''
+        await eventsApi.createEvent(title, '', location, eventDate)
         onDone(true)
-      } catch (e) { onDone(false) }
+        pushToast('Event created', 'success')
+      } catch (e) { onDone(false); pushToast('Failed to create event', 'error') }
       finally { setSubmitting(false) }
     }
     return (
@@ -96,6 +104,12 @@ export function EventsView() {
           Organize Event
         </motion.button>
       </div>
+
+      {toast && (
+        <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+          {toast.message}
+        </div>
+      )}
 
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
         {categories.map((cat, idx) => (

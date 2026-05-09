@@ -415,6 +415,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                        <div>
                          <p className="text-sm font-black text-[#4D5D53]">Alex Rivers</p>
                          <p className="text-[8px] font-bold text-[#9A9A9A] tracking-wider uppercase">Resident • Block B</p>
+                         <p className="text-[8px] font-black text-[#D4A373] tracking-wider uppercase mt-1">Role • {userRole}</p>
                        </div>
                     </div>
                     <div className="space-y-1 px-1">
@@ -438,6 +439,8 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                           <p className="text-xs font-bold text-[#4D5D53]">{item.label}</p>
                         </motion.button>
                       ))}
+
+                      </div>
 
                       <div className="h-[1px] bg-black/5 my-2 mx-2" />
 

@@ -24,10 +24,16 @@ export function CommunityView() {
   const [polls, setPolls] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [question, setQuestion] = useState('')
   const [options, setOptions] = useState<string[]>(['', ''])
   const [deadline, setDeadline] = useState('')
+
+  const pushToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   useEffect(() => {
     let mounted = true
@@ -55,7 +61,7 @@ export function CommunityView() {
       setLoading(true)
       const opts = options.filter(o => o.trim() !== '')
       if (!question.trim() || opts.length < 2) {
-        alert('Provide a question and at least 2 options')
+        pushToast('Provide a question and at least 2 options', 'error')
         return
       }
       const res = await pollsApi.createPoll(question, opts, deadline)
@@ -66,12 +72,12 @@ export function CommunityView() {
         setQuestion('')
         setOptions(['',''])
         setDeadline('')
-        alert('Poll created')
+        pushToast('Poll created', 'success')
       } else {
-        alert(res.data?.message || 'Failed to create poll')
+        pushToast(res.data?.message || 'Failed to create poll', 'error')
       }
     } catch (e:any) {
-      alert(e?.message || 'Network error')
+      pushToast(e?.message || 'Network error', 'error')
     } finally { setLoading(false) }
   }
 
@@ -110,6 +116,12 @@ export function CommunityView() {
           )}
         </div>
       </div>
+
+      {toast && (
+        <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+          {toast.message}
+        </div>
+      )}
 
       {/* Create Poll Modal */}
       {showCreate && (

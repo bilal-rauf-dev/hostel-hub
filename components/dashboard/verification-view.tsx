@@ -22,6 +22,12 @@ export function VerificationView() {
   const [residents, setResidents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string|null>(null)
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
+
+  const pushToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   useEffect(()=>{
     let mounted = true
@@ -48,12 +54,12 @@ export function VerificationView() {
         const r = await usersApi.getAllUsers()
         if (r.data?.success) setResidents((r.data.data || []).filter((u:any)=>u.status === 'Pending' || u.verification_status === 'pending'))
         setError(null)
-        alert('User verified')
+        pushToast('User verified', 'success')
       } else {
-        alert(res.data?.message || 'Failed to verify')
+        pushToast(res.data?.message || 'Failed to verify', 'error')
       }
     } catch (e:any) {
-      alert(e?.message || 'Network error')
+      pushToast(e?.message || 'Network error', 'error')
     } finally { setLoading(false) }
   }
 
@@ -64,12 +70,12 @@ export function VerificationView() {
       if (res.data?.success) {
         const r = await usersApi.getAllUsers()
         if (r.data?.success) setResidents((r.data.data || []).filter((u:any)=>u.status === 'Pending' || u.verification_status === 'pending'))
-        alert('User suspended')
+        pushToast('User suspended', 'success')
       } else {
-        alert(res.data?.message || 'Failed to suspend')
+        pushToast(res.data?.message || 'Failed to suspend', 'error')
       }
     } catch (e:any) {
-      alert(e?.message || 'Network error')
+      pushToast(e?.message || 'Network error', 'error')
     } finally { setLoading(false) }
   }
 
@@ -95,6 +101,12 @@ export function VerificationView() {
           </div>
         </div>
       </div>
+
+      {toast && (
+        <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+          {toast.message}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
         {/* Left Column: List */}

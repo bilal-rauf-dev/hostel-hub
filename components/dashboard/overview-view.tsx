@@ -228,25 +228,22 @@ export function OverviewView() {
           initial={{ x: 20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ delay: 0.6, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="space-y-4"
+        >
           <div className="space-y-4">
-            {recentTickets.map((event, idx) => (
-              { title: "Yoga in the Garden", date: "Tomorrow, 8:00 AM", color: "bg-[#FEFAE0] text-[#D4A373] border-[#E9EDC9]" },
-              { title: "Kitchen Deep Clean", date: "Sat, Oct 30, 2:00 PM", color: "bg-orange-50 text-orange-600 border-orange-100" }
-            ].map((event, idx) => (
+            {(recentTickets.length > 0 ? recentTickets : [
+              { title: 'Plumbing Request #3041', date: 'In Progress • Oct 28', color: 'bg-[#FEFAE0] text-[#D4A373] border-[#E9EDC9]' },
+              { title: 'AC Repair #2988', date: 'Resolved • Oct 25', color: 'bg-orange-50 text-orange-600 border-orange-100' },
+            ]).map((ticket, idx) => (
               <motion.div 
-                key={idx}
-                initial={{ x: 20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.7 + (idx * 0.1) }}
-                <div className={`w-3.5 h-3.5 rounded-full ${event.color || 'bg-[#FEFAE0] text-[#D4A373]'}`} />
-                <div className="flex-1">
-                  <h5 className="text-sm font-black text-[#4D5D53]">{event.title || event.title_text || event.subject}</h5>
-                  <p className="text-[10px] text-[#9A9A9A]">{event.created_at || event.date || event.time || ''}</p>
-                </div>
-                <ArrowRight className="h-4 w-4 text-[#9A9A9A]" />
-                <div className="flex-1">
-                  <p className="text-xs font-bold text-[#414D45] group-hover:text-[#D4A373] transition-colors">{event.title}</p>
-                  <p className="text-[10px] text-[#9A9A9A] font-medium">{event.date}</p>
+                key={ticket.ticket_id || ticket.id || idx}
+                whileHover={{ x: 6 }}
+                className="p-5 bg-white rounded-2xl border border-[#EFEFE9] flex items-center gap-4 group cursor-pointer shadow-sm transition-all duration-300"
+              >
+                <div className={`w-3.5 h-3.5 rounded-full ${ticket.color || 'bg-[#FEFAE0] text-[#D4A373]'}`} />
+                <div className="flex-1 min-w-0">
+                  <h5 className="text-sm font-black text-[#4D5D53] truncate">{ticket.title || ticket.title_text || ticket.subject}</h5>
+                  <p className="text-[10px] text-[#9A9A9A]">{ticket.created_at || ticket.date || ticket.time || ''}</p>
                 </div>
                 <ArrowRight className="h-4 w-4 text-[#BDBDBD] opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
               </motion.div>

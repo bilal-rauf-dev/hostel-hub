@@ -46,14 +46,15 @@ async def get_safety_alerts(
 
 @router.post("/")
 async def create_safety_alert(
-    title: str,
-    body: str,
-    severity: str = "info",
+    payload: dict[str, Any],
     admin: dict = Depends(require_admin),
     pool=Depends(get_db_pool),
 ) -> dict:
     """Create a new safety alert (admin only)."""
     try:
+        title = payload.get("title") or payload.get("target") or "Safety Alert"
+        body = payload.get("body") or payload.get("message") or ""
+        severity = payload.get("severity") or payload.get("level") or "info"
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict) as cur:
                 await cur.execute(

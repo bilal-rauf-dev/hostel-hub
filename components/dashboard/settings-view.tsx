@@ -42,12 +42,18 @@ export function SettingsView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
 
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [contactNumber, setContactNumber] = useState('')
-  const [roomAssignment, setRoomAssignment] = useState('')
+  const [roomNumber, setRoomNumber] = useState('')
   const [studentId, setStudentId] = useState('')
+
+  const pushToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   useEffect(() => {
     let mounted = true
@@ -62,7 +68,7 @@ export function SettingsView() {
           setDisplayName(d.display_name || '')
           setEmail(d.email || '')
           setContactNumber(d.contact_number || '')
-          setRoomAssignment(d.room_number || d.room_assignment || '')
+          setRoomNumber(d.room_number || d.room_assignment || '')
           setStudentId(d.student_id || '')
         } else {
           setError(res.data?.message || 'Failed to load profile')
@@ -82,12 +88,16 @@ export function SettingsView() {
     try {
       setSaving(true)
       setError(null)
-      const res = await usersApi.updateMe(displayName, contactNumber)
+      const res = await usersApi.updateMe(displayName, contactNumber, undefined, roomNumber)
       if (!res.data?.success) {
         setError(res.data?.message || 'Failed to save')
+        pushToast(res.data?.message || 'Failed to save', 'error')
+      } else {
+        pushToast('Settings saved', 'success')
       }
     } catch (err: any) {
       setError(err?.message || 'Network error')
+      pushToast(err?.message || 'Network error', 'error')
     } finally {
       setSaving(false)
     }
@@ -127,6 +137,12 @@ export function SettingsView() {
            </button>
         </div>
       </div>
+
+      {toast && (
+        <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+          {toast.message}
+        </div>
+      )}
 
       <AnimatePresence mode="wait">
         {activeTab === 'General' ? (
@@ -210,25 +226,25 @@ export function SettingsView() {
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] ml-2">Display Name</label>
-                     <input type="text" defaultValue="Alex Rivers" className="w-full p-4 bg-[#FAF9F6] border border-transparent rounded-2xl text-sm focus:border-[#D4A373] outline-none transition-all" />
+                    <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full p-4 bg-[#FAF9F6] border border-transparent rounded-2xl text-sm focus:border-[#D4A373] outline-none transition-all" />
                   </div>
                   <div className="space-y-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] ml-2">Contact Number</label>
-                     <input type="text" defaultValue="+1 (555) 000-1234" className="w-full p-4 bg-[#FAF9F6] border border-transparent rounded-2xl text-sm focus:border-[#D4A373] outline-none transition-all" />
+                    <input type="text" value={contactNumber} onChange={(e) => setContactNumber(e.target.value)} className="w-full p-4 bg-[#FAF9F6] border border-transparent rounded-2xl text-sm focus:border-[#D4A373] outline-none transition-all" />
                   </div>
                   <div className="space-y-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] ml-2">Room Assignment</label>
-                     <input type="text" defaultValue="Block B - 402" disabled className="w-full p-4 bg-[#F4F4F2] border border-transparent rounded-2xl text-sm text-[#9A9A9A] outline-none cursor-not-allowed" />
+                    <label className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] ml-2">Room Number</label>
+                    <input type="text" value={roomNumber} onChange={(e) => setRoomNumber(e.target.value)} className="w-full p-4 bg-[#FAF9F6] border border-transparent rounded-2xl text-sm focus:border-[#D4A373] outline-none transition-all" />
                   </div>
                   <div className="space-y-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] ml-2">Student ID</label>
-                     <input type="text" defaultValue="STU-2024-001" disabled className="w-full p-4 bg-[#F4F4F2] border border-transparent rounded-2xl text-sm text-[#9A9A9A] outline-none cursor-not-allowed" />
+                    <input type="text" value={studentId} disabled className="w-full p-4 bg-[#F4F4F2] border border-transparent rounded-2xl text-sm text-[#9A9A9A] outline-none cursor-not-allowed" />
                   </div>
                </div>
 
                <div className="mt-10 flex justify-end">
-                  <button className="px-8 py-4 bg-[#4D5D53] text-white rounded-2xl font-bold shadow-lg shadow-[#4D5D53]/20 hover:bg-[#3D4D43] transition-all">
-                     Save Changes
+                  <button onClick={handleSave} disabled={saving} className="px-8 py-4 bg-[#4D5D53] text-white rounded-2xl font-bold shadow-lg shadow-[#4D5D53]/20 hover:bg-[#3D4D43] transition-all">
+                    {saving ? 'Saving...' : 'Save Changes'}
                   </button>
                </div>
             </div>

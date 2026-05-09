@@ -76,6 +76,12 @@ export function MarketplaceView() {
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState('')
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
+
+  const pushToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   useEffect(() => {
     let mounted = true
@@ -128,6 +134,12 @@ export function MarketplaceView() {
           </button>
         </div>
       </div>
+
+      {toast && (
+        <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+          {toast.message}
+        </div>
+      )}
 
       {/* Create Listing Modal */}
       {creating && (
@@ -250,7 +262,7 @@ export function MarketplaceView() {
                       Limited Stock
                     </div>
                     <div>
-                      <button onClick={async () => { try { await marketplaceApi.placeOrder(product.listing_id || product.id); alert('Order placed'); } catch (err) { alert('Failed to place order') } }} className="w-10 h-10 bg-[#FAF9F6] rounded-xl flex items-center justify-center text-[#BDBDBD] border border-[#EFEFE9] group-hover:bg-[#D4A373] group-hover:text-white group-hover:border-[#D4A373] group-hover:rotate-12 transition-all duration-500">
+                      <button onClick={async () => { try { await marketplaceApi.placeOrder(product.listing_id || product.id); pushToast('Order placed', 'success'); } catch (err) { pushToast('Failed to place order', 'error') } }} className="w-10 h-10 bg-[#FAF9F6] rounded-xl flex items-center justify-center text-[#BDBDBD] border border-[#EFEFE9] group-hover:bg-[#D4A373] group-hover:text-white group-hover:border-[#D4A373] group-hover:rotate-12 transition-all duration-500">
                         <ArrowUpRight className="h-5 w-5" />
                       </button>
                     </div>
