@@ -17,11 +17,13 @@ import {
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { lostFoundApi } from '@/lib/api'
+import { getCurrentUser } from '@/lib/auth'
 import Image from 'next/image'
 
 
 
 export function LostAndFoundView() {
+  const currentUser = getCurrentUser()
   const [filter, setFilter] = useState('All')
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -182,7 +184,7 @@ export function LostAndFoundView() {
                     }`}>
                       {item.item_type}
                     </span>
-                    {item.status === 'Resolved' && (
+                    {(item.status === 'resolved' || item.status === 'Resolved') && (
                       <span className="px-4 py-1.5 bg-blue-500/90 backdrop-blur-xl text-white rounded-full text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
                         <CheckCircle2 className="h-3 w-3" /> Found
                       </span>
@@ -213,9 +215,40 @@ export function LostAndFoundView() {
                       </div>
                       <span className="text-[10px] font-black text-[#4D5D53] uppercase tracking-widest leading-none">{item.reporter_name}</span>
                     </div>
-                    <div className="w-10 h-10 rounded-xl bg-[#FAF9F6] border border-[#F0F0EE] flex items-center justify-center text-[#BDBDBD] group-hover:bg-[#4D5D53] group-hover:text-white group-hover:rotate-12 transition-all duration-500">
-                      <AlertCircle className="h-5 w-5" />
-                    </div>
+                    {item.reporter === currentUser?.user_id && (
+                      <div className="flex items-center gap-2">
+                        {item.item_type === 'lost' && item.status !== 'resolved' && item.status !== 'Resolved' && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              try {
+                                await lostFoundApi.resolveItem(item.item_id)
+                                const refreshRes = await lostFoundApi.getItems()
+                                if (refreshRes.data?.success) setItems(refreshRes.data.data || [])
+                                pushToast('Item marked as found!', 'success')
+                              } catch { pushToast('Failed to update item', 'error') }
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-colors"
+                          >
+                            Mark Found
+                          </button>
+                        )}
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            try {
+                              await lostFoundApi.archiveItem(item.item_id)
+                              const refreshRes = await lostFoundApi.getItems()
+                              if (refreshRes.data?.success) setItems(refreshRes.data.data || [])
+                              pushToast('Item deleted', 'success')
+                            } catch { pushToast('Failed to delete item', 'error') }
+                          }}
+                          className="px-3 py-1.5 border border-red-400 text-red-400 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-50 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

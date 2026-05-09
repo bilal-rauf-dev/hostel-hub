@@ -69,9 +69,9 @@ export function GuidebookView() {
             key={guide.id || guide.title || idx}
             initial={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
             animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-            transition={{ delay: idx * 0.1, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#D4A373' }}
-            className="bg-white p-8 rounded-[3rem] border border-[#F0F0EE] shadow-sm hover:shadow-xl transition-all duration-500 group cursor-pointer"
+            className="bg-white p-8 rounded-[3rem] border border-[#F0F0EE] shadow-sm hover:shadow-xl hover:shadow-[#D4A373]/20 transition-all duration-250 group cursor-pointer"
           >
             <div className={`w-16 h-16 rounded-[1.5rem] bg-blue-50 text-blue-500 flex items-center justify-center mb-8 transition-all duration-500 group-hover:scale-110 group-hover:rotate-6 shadow-sm`}>
               <Wifi className="h-8 w-8" />

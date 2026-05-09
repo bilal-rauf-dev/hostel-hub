@@ -309,6 +309,10 @@ export const lostFoundApi = {
   archiveItem: async (item_id: number) => {
     return apiClient.patch(`/api/v1/lost-found/${item_id}/archive`)
   },
+
+  resolveItem: async (item_id: number) => {
+    return apiClient.patch(`/api/v1/lost-found/${item_id}/resolve`)
+  },
 }
 
 // ============================================
@@ -372,5 +376,23 @@ export const safetyAlertsApi = {
   },
   toggleAlert: async (id: number) => {
     return apiClient.patch(`/api/v1/safety-alerts/${id}`)
+  },
+}
+
+// ============================================
+// COMMUNITY API
+// ============================================
+export const communityApi = {
+  getPosts: async () => {
+    return apiClient.get('/api/v1/community/posts')
+  },
+  createPost: async (content: string) => {
+    return apiClient.post('/api/v1/community/posts', { content })
+  },
+  deletePost: async (post_id: number) => {
+    return apiClient.delete(`/api/v1/community/posts/${post_id}`)
+  },
+  toggleLike: async (post_id: number) => {
+    return apiClient.post(`/api/v1/community/posts/${post_id}/like`)
   },
 }

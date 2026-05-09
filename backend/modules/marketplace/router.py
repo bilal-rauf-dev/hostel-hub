@@ -285,34 +285,85 @@ async def update_order_status(
     try:
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
-                # Check seller ownership
                 await cur.execute(
                     """
-                    SELECT mo.order_id, mo.seller_id, mo.status
+                    SELECT mo.order_id, mo.buyer_id, mo.status, mo.listing_id,
+                           ml.title AS item_title, ml.seller_id
                     FROM marketplace_orders mo
+                    JOIN marketplace_listings ml ON mo.listing_id = ml.listing_id
                     WHERE mo.order_id = %s
                     """,
                     (order_id,),
-                )
+                )   
                 order = await cur.fetchone()
                 
                 if not order:
                     return json_response(False, None, "Order not found")
                 
-                if order["seller_id"] != user["user_id"] and user["role"] != "admin":
+                is_seller = order["seller_id"] == user["user_id"]
+                is_buyer = order["buyer_id"] == user["user_id"]
+                is_admin = user.get("role") == "admin"
+                
+                allowed_statuses_seller = {"confirmed", "delivered", "cancelled"}
+                allowed_statuses_buyer = {"cancelled"}
+                
+                new_status = request_body.status
+                
+                if is_admin:
+                    pass
+                elif is_seller and new_status in allowed_statuses_seller:
+                    pass
+                elif is_buyer and new_status in allowed_statuses_buyer:
+                    pass
+                else:
                     raise HTTPException(status_code=403, detail="Not authorized to update this order")
                 
                 # Update order status
                 await cur.execute(
                     """
                     UPDATE marketplace_orders
-                    SET status = %s, updated_at = NOW()
+                    SET status = %s
                     WHERE order_id = %s
-                    RETURNING order_id, buyer_id, seller_id, listing_id, status, created_at, updated_at
+                    RETURNING order_id, buyer_id, listing_id, status, created_at
                     """,
                     (request_body.status, order_id),
                 )
                 updated_order = await cur.fetchone()
+
+                old_status = order["status"]
+                item_title = order["item_title"]
+                
+                notify_user_id = None
+                notify_title = None
+                notify_body = None
+                
+                if old_status == "pending" and new_status == "confirmed":
+                    notify_user_id = order["buyer_id"]
+                    notify_title = "Order Confirmed"
+                    notify_body = f"Your order for {item_title} has been confirmed by the seller."
+                elif old_status == "confirmed" and new_status == "delivered":
+                    notify_user_id = order["buyer_id"]
+                    notify_title = "Order Delivered"
+                    notify_body = f"Your order for {item_title} has been delivered!"
+                elif new_status == "cancelled":
+                    if is_seller:
+                        notify_user_id = order["buyer_id"]
+                        notify_title = "Order Cancelled"
+                        notify_body = f"Your order for {item_title} was cancelled by the seller."
+                    elif is_buyer:
+                        notify_user_id = order["seller_id"]
+                        notify_title = "Order Cancelled"
+                        notify_body = f"A buyer cancelled their order for {item_title}."
+                
+                if notify_user_id and notify_title and notify_body:
+                    await cur.execute(
+                        """
+                        INSERT INTO notifications (user_id, title, body, is_read)
+                        VALUES (%s, %s, %s, FALSE)
+                        """,
+                        (notify_user_id, notify_title, notify_body)
+                    )
+
                 await conn.commit()
         
         return json_response(True, updated_order, "Order status updated successfully")

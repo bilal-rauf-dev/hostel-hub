@@ -18,10 +18,14 @@ import {
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { pollsApi } from '@/lib/api'
-import { isAdmin } from '@/lib/auth'
+import { pollsApi, communityApi } from '@/lib/api'
+import { isAdmin, getCurrentUser } from '@/lib/auth'
 
 export function CommunityView() {
+  const currentUser = getCurrentUser()
+  const [posts, setPosts] = useState<any[]>([])
+  const [postContent, setPostContent] = useState('')
+  const [posting, setPosting] = useState(false)
   const [polls, setPolls] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -64,6 +68,9 @@ export function CommunityView() {
         } else {
           setError(res.data?.message || 'Failed to load polls')
         }
+        
+        const postsRes = await communityApi.getPosts()
+        if (postsRes.data?.success) setPosts(postsRes.data.data || [])
       } catch (err: any) {
         setError(err?.message || 'Network error')
       } finally {
@@ -202,8 +209,10 @@ export function CommunityView() {
               <div className="w-12 h-12 rounded-xl bg-[#D4A373] flex items-center justify-center text-white shrink-0 shadow-lg shadow-[#D4A373]/20">
                 <User className="h-6 w-6" />
               </div>
-              <textarea 
-                placeholder="What's on your mind, Alex?"
+              <textarea
+                value={postContent}
+                onChange={(e) => setPostContent(e.target.value)}
+                placeholder="What's on your mind?"
                 className="w-full bg-[#FAF9F6] rounded-2xl p-4 text-sm outline-none focus:ring-2 focus:ring-[#D4A373]/10 border border-transparent focus:border-[#D4A373]/30 min-h-[100px] resize-none transition-all"
               />
             </div>
@@ -221,9 +230,26 @@ export function CommunityView() {
               <motion.button 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
+                onClick={async () => {
+                  if (!postContent.trim()) return
+                  try {
+                    setPosting(true)
+                    const res = await communityApi.createPost(postContent)
+                    if (res.data?.success) {
+                      setPostContent('')
+                      const postsRes = await communityApi.getPosts()
+                      if (postsRes.data?.success) setPosts(postsRes.data.data || [])
+                      pushToast('Post shared!', 'success')
+                    } else {
+                      pushToast(res.data?.message || 'Failed to post', 'error')
+                    }
+                  } catch (e: any) {
+                    pushToast(e?.message || 'Network error', 'error')
+                  } finally { setPosting(false) }
+                }}
                 className="px-6 py-2 bg-[#4D5D53] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-[#4D5D53]/20"
               >
-                Post
+                {posting ? 'Posting...' : 'Post'}
               </motion.button>
             </div>
           </div>
@@ -231,6 +257,58 @@ export function CommunityView() {
           {/* Feed */}
           <div className="space-y-8">
             <AnimatePresence mode="popLayout">
+              {posts.map((post, idx) => (
+                <motion.div
+                  key={`post-${post.post_id}`}
+                  initial={{ opacity: 0, x: -30, filter: 'blur(10px)' }}
+                  animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                  transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                  className="bg-white p-8 rounded-[3rem] border border-[#F0F0EE] shadow-sm hover:shadow-xl transition-all duration-500"
+                >
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[#E9EDC9] flex items-center justify-center text-[#4D5D53]">
+                        <User className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-[#4D5D53]">{post.author_name}</p>
+                        <p className="text-[10px] text-[#9A9A9A] font-bold">
+                          {new Date(post.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                    {post.user_id === currentUser?.user_id && (
+                      <button
+                        onClick={async () => {
+                          await communityApi.deletePost(post.post_id)
+                          const postsRes = await communityApi.getPosts()
+                          if (postsRes.data?.success) setPosts(postsRes.data.data || [])
+                          pushToast('Post deleted', 'success')
+                        }}
+                        className="text-[10px] font-black uppercase tracking-widest text-red-400 hover:text-red-600 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-sm text-[#4D5D53] leading-relaxed mb-6">{post.content}</p>
+                  <div className="flex items-center gap-4 pt-6 border-t border-[#F0F0EE]">
+                    <button
+                      onClick={async () => {
+                        await communityApi.toggleLike(post.post_id)
+                        const postsRes = await communityApi.getPosts()
+                        if (postsRes.data?.success) setPosts(postsRes.data.data || [])
+                      }}
+                      className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                        post.liked_by_me ? 'text-[#D4A373]' : 'text-[#9A9A9A] hover:text-[#D4A373]'
+                      }`}
+                    >
+                      <Heart className={`h-4 w-4 ${post.liked_by_me ? 'fill-[#D4A373] text-[#D4A373]' : ''}`} />
+                      {post.like_count} {post.like_count === 1 ? 'Like' : 'Likes'}
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
               {polls.map(poll => (
                 <motion.div
                   key={`poll-${poll.poll_id}`}
@@ -322,8 +400,7 @@ export function CommunityView() {
                 </motion.div>
               ))}
 
-              {/* Community posts not available via API in this build */}
-              <div className="p-6 text-sm text-[#9A9A9A]">Community posts are currently unavailable.</div>
+
             </AnimatePresence>
           </div>
         </div>

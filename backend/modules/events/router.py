@@ -37,12 +37,18 @@ async def get_events(
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
-                    """
-                    SELECT event_id, title, description, event_date, location, created_by, created_at
-                    FROM events
-                    WHERE event_date > NOW()
-                    ORDER BY event_date ASC
-                    """
+                """
+                SELECT e.event_id, e.title, e.description, e.event_date, e.location, 
+                    e.created_by, e.created_at,
+                    COUNT(r.rsvp_id) FILTER (WHERE r.status = 'going') AS attendees,
+                    MAX(CASE WHEN r.user_id = %s THEN r.status END) AS my_rsvp
+                FROM events e
+                LEFT JOIN event_rsvps r ON e.event_id = r.event_id
+                WHERE e.event_date > NOW()
+                GROUP BY e.event_id
+                ORDER BY e.event_date ASC
+                """,
+                (user["user_id"],),
                 )
                 events = await cur.fetchall()
         
@@ -100,7 +106,7 @@ async def rsvp_event(
                     INSERT INTO event_rsvps (event_id, user_id, status)
                     VALUES (%s, %s, %s)
                     ON CONFLICT (event_id, user_id) DO UPDATE SET status = %s
-                    RETURNING rsvp_id, event_id, user_id, status, created_at
+                    RETURNING rsvp_id, event_id, user_id, status
                     """,
                     (event_id, user["user_id"], request_body.status, request_body.status),
                 )

@@ -353,7 +353,11 @@ export function MarketplaceView() {
                 </div>
                 <div className="flex justify-between py-3 border-b">
                   <span className="text-sm text-[#9A9A9A]">Status</span>
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-black ${orderDetailModal.order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>{orderDetailModal.order.status || 'Pending'}</span>
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black ${
+                    orderDetailModal.order.status === 'fulfilled' || orderDetailModal.order.status === 'delivered' || orderDetailModal.order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-600' 
+                    : orderDetailModal.order.status === 'cancelled' || orderDetailModal.order.status === 'Cancelled' ? 'bg-red-50 text-red-500' 
+                    : 'bg-blue-50 text-blue-600'
+                  }`}>{orderDetailModal.order.status || 'Pending'}</span>
                 </div>
                 <div className="flex justify-between py-3">
                   <span className="text-sm text-[#9A9A9A]">Order Date</span>
@@ -571,35 +575,60 @@ export function MarketplaceView() {
                   </div>
                   <div className="flex items-center gap-3">
                     <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                      order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600'
+                      order.status === 'fulfilled' || order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600'
                       : order.status === 'confirmed' ? 'bg-blue-50 text-blue-600'
+                      : order.status === 'cancelled' ? 'bg-red-50 text-red-500'
                       : 'bg-orange-50 text-orange-500'
                     }`}>
                       {order.status}
                     </span>
                     {order.status === 'pending' && (
-                      <button
-                        onClick={async () => {
-                          await marketplaceApi.updateOrderStatus(order.order_id, 'confirmed')
-                          await loadMarketplace()
-                          pushToast('Order confirmed', 'success')
-                        }}
-                        className="px-3 py-1.5 bg-[#4D5D53] text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
-                      >
-                        Confirm
-                      </button>
+                      <>
+                        <button
+                          onClick={async () => {
+                            await marketplaceApi.updateOrderStatus(order.order_id, 'confirmed')
+                            await loadMarketplace()
+                            pushToast('Order confirmed — buyer notified', 'success')
+                          }}
+                          className="px-3 py-1.5 bg-[#4D5D53] text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await marketplaceApi.updateOrderStatus(order.order_id, 'cancelled')
+                            await loadMarketplace()
+                            pushToast('Order cancelled', 'error')
+                          }}
+                          className="px-3 py-1.5 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50"
+                        >
+                          Cancel
+                        </button>
+                      </>
                     )}
                     {order.status === 'confirmed' && (
-                      <button
-                        onClick={async () => {
-                          await marketplaceApi.updateOrderStatus(order.order_id, 'delivered')
-                          await loadMarketplace()
-                          pushToast('Order marked as delivered', 'success')
-                        }}
-                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
-                      >
-                        Mark Delivered
-                      </button>
+                      <>
+                        <button
+                          onClick={async () => {
+                            await marketplaceApi.updateOrderStatus(order.order_id, 'delivered')
+                            await loadMarketplace()
+                            pushToast('Order marked as delivered', 'success')
+                          }}
+                          className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        >
+                          Deliver
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await marketplaceApi.updateOrderStatus(order.order_id, 'cancelled')
+                            await loadMarketplace()
+                            pushToast('Order cancelled', 'error')
+                          }}
+                          className="px-3 py-1.5 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50"
+                        >
+                          Cancel
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -643,13 +672,28 @@ export function MarketplaceView() {
                 <div className="flex items-center gap-8">
                   <div className="text-right hidden sm:block">
                     <div className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest ${
-                      order.status === 'delivered'
+                      order.status === 'fulfilled' || order.status === 'delivered'
                         ? 'text-emerald-500 bg-emerald-50'
+                        : order.status === 'cancelled'
+                        ? 'text-red-500 bg-red-50'
                         : 'text-blue-500 bg-blue-50'
                     }`}>
                       {order.status}
                     </div>
                   </div>
+                  {(order.status === 'pending' || order.status === 'confirmed') && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        await marketplaceApi.updateOrderStatus(order.order_id, 'cancelled')
+                        await loadMarketplace()
+                        pushToast('Order cancelled', 'error')
+                      }}
+                      className="px-3 py-1.5 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50"
+                    >
+                      Cancel
+                    </button>
+                  )}
                   <ArrowUpRight className="h-5 w-5 text-[#BDBDBD] group-hover:text-[#D4A373] group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                 </div>
               </div>

@@ -195,9 +195,9 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
         <motion.div 
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          transition={{ delay: 0.1, duration: 1, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#D4A373', scale: 1.01, transition: { duration: 0.05 } }}
-          className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-500 hover:shadow-xl hover:shadow-[#D4A373]/5"
+          className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-250 hover:shadow-xl hover:shadow-[#D4A373]/5"
           onClick={() => onNavigate?.('Marketplace')}
         >
           <div>
@@ -215,9 +215,9 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
         <motion.div 
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          transition={{ delay: 0.2, duration: 1, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#F97316', scale: 1.01, transition: { duration: 0.05 } }}
-          className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-500 hover:shadow-xl hover:shadow-orange-500/5"
+          className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-250 hover:shadow-xl hover:shadow-orange-500/5"
           onClick={() => onNavigate?.('Tickets')}
         >
           <div>
@@ -235,9 +235,9 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
         <motion.div 
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          transition={{ delay: 0.3, duration: 1, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#10B981', scale: 1.01, transition: { duration: 0.05 } }}
-          className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-500 hover:shadow-xl hover:shadow-emerald-500/5"
+          className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-250 hover:shadow-xl hover:shadow-emerald-500/5"
           onClick={() => onNavigate?.('Community')}
         >
           <div>

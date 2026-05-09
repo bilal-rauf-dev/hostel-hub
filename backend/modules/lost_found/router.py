@@ -39,7 +39,7 @@ async def get_lost_found_items(
                 await cur.execute(
                     """
                     SELECT lf.item_id, lf.item_type, lf.title, lf.description, lf.location_tag,
-                           lf.item_date, lf.image_url, lf.is_anonymous, lf.is_archived,
+                           lf.item_date, lf.image_url, lf.is_anonymous, lf.is_archived, lf.status,
                            CASE WHEN is_anonymous = TRUE THEN NULL ELSE posted_by END as reporter,
                            CASE WHEN is_anonymous = TRUE THEN 'Anonymous' ELSE u.display_name END as reporter_name
                     FROM lost_found_items lf
@@ -161,3 +161,42 @@ async def archive_item(
         return json_response(True, archived_item, "Item archived successfully")
     except Exception as e:
         return json_response(False, None, f"Failed to archive item: {str(e)}")
+
+
+@router.patch("/{item_id}/resolve")
+async def resolve_item(
+    item_id: int,
+    user: dict = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Mark a lost item as found (poster or admin only)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    "SELECT posted_by, item_type FROM lost_found_items WHERE item_id = %s",
+                    (item_id,),
+                )
+                item = await cur.fetchone()
+
+                if not item:
+                    return json_response(False, None, "Item not found")
+
+                if item["posted_by"] != user["user_id"] and user["role"] != "admin":
+                    return json_response(False, None, "Not authorized to resolve this item")
+
+                await cur.execute(
+                    """
+                    UPDATE lost_found_items
+                    SET status = 'resolved'
+                    WHERE item_id = %s
+                    RETURNING item_id, status
+                    """,
+                    (item_id,),
+                )
+                updated = await cur.fetchone()
+                await conn.commit()
+
+        return json_response(True, updated, "Item marked as resolved")
+    except Exception as e:
+        return json_response(False, None, f"Failed to resolve item: {str(e)}")

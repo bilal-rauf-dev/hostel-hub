@@ -49,10 +49,13 @@ export function EventsView() {
 
   const categories = ['All', ...Array.from(new Set(events.map(e => e.category).filter(Boolean)))]
 
-  const handleRsvp = async (event_id: number) => {
+  const handleRsvp = async (event_id: number, currentRsvp: string | null) => {
     try {
-      await eventsApi.rsvpEvent(event_id, 'going')
-      pushToast('RSVP saved', 'success')
+      const newStatus = currentRsvp === 'going' ? 'not_going' : 'going'
+      await eventsApi.rsvpEvent(event_id, newStatus)
+      const res = await eventsApi.getEvents()
+      if (res.data?.success) setEvents(res.data.data || [])
+      pushToast(newStatus === 'going' ? 'You\'re going!' : 'RSVP removed', 'success')
     } catch (err) { pushToast('Failed to RSVP', 'error') }
   }
 
@@ -181,7 +184,7 @@ export function EventsView() {
                      <div className="p-2 bg-[#FAF9F6] rounded-lg group-hover:bg-[#FEFAE0] transition-colors"><MapPin className="h-4 w-4" /></div> {event.location}
                    </div>
                    <div className="flex items-center gap-3 text-sm font-bold tracking-tight">
-                     <div className="p-2 bg-[#FAF9F6] rounded-lg group-hover:bg-[#FEFAE0] transition-colors"><Users className="h-4 w-4" /></div> {event.attendees || '0'}
+                     <div className="p-2 bg-[#FAF9F6] rounded-lg group-hover:bg-[#FEFAE0] transition-colors"><Users className="h-4 w-4" /></div> {event.attendees ?? '0'}
                    </div>
                 </div>
               </div>
@@ -204,10 +207,10 @@ export function EventsView() {
                  <motion.button 
                    whileHover={{ x: 8, scale: 1.02 }}
                    whileTap={{ scale: 0.98 }}
-                   onClick={() => handleRsvp(event.event_id || event.id)}
-                   className="w-full sm:w-auto px-10 py-5 bg-[#4D5D53] text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#3D4D43] transition-all flex items-center justify-center gap-4 shadow-2xl shadow-[#4D5D53]/20"
+                   onClick={() => handleRsvp(event.event_id || event.id, event.my_rsvp)}
+                   className={`w-full sm:w-auto px-10 py-5 bg-[#4D5D53] text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-[#3D4D43] transition-all flex items-center justify-center gap-4 shadow-2xl shadow-[#4D5D53]/20 ${event.my_rsvp === 'going' ? 'ring-2 ring-emerald-400' : ''}`}
                  >
-                   Join Event <ArrowRight className="h-4 w-4" />
+                   {event.my_rsvp === 'going' ? 'Cancel RSVP' : 'Join Event'} <ArrowRight className="h-4 w-4" />
                  </motion.button>
               </div>
             </div>

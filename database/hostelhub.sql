@@ -4,7 +4,7 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TYPE user_role AS ENUM ('student', 'admin');
-CREATE TYPE order_status AS ENUM ('pending','confirmed','ready','delivered');
+CREATE TYPE order_status AS ENUM ('confirmed','delivered','cancelled');
 CREATE TYPE ticket_status AS ENUM ('submitted','assigned','in_progress','resolved','closed');
 CREATE TYPE rsvp_status AS ENUM ('going','not_going','maybe');
 CREATE TYPE item_type AS ENUM ('lost','found');
@@ -137,7 +137,8 @@ CREATE TABLE lost_found_items (
   image_url VARCHAR(500),
   is_anonymous BOOLEAN DEFAULT FALSE,
   is_archived BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  status VARCHAR(20) DEFAULT 'active'
 );
 
 CREATE TABLE guidebook_entries (
@@ -164,6 +165,23 @@ CREATE TABLE otp_verifications (
   otp_code VARCHAR(6) NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   is_used BOOLEAN DEFAULT FALSE
+);
+
+-- Community Posts
+CREATE TABLE community_posts (
+    post_id     SERIAL PRIMARY KEY,
+    user_id     INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    content     TEXT NOT NULL CHECK (char_length(content) BETWEEN 1 AND 1000),
+    created_at  TIMESTAMP DEFAULT NOW()
+);
+
+-- Post Likes (one like per user per post)
+CREATE TABLE post_likes (
+    like_id     SERIAL PRIMARY KEY,
+    post_id     INT NOT NULL REFERENCES community_posts(post_id) ON DELETE CASCADE,
+    user_id     INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    created_at  TIMESTAMP DEFAULT NOW(),
+    UNIQUE (post_id, user_id)
 );
 
 -- Indexes on FK columns and requested search columns
@@ -414,6 +432,32 @@ INSERT INTO otp_verifications (otp_id, email, otp_code, expires_at, is_used) VAL
   (1, 'bilal.ahmed@university.edu.pk', '184562', '2026-05-09 14:00:00+05', TRUE),
   (2, 'ayesha.siddiqui@university.edu.pk', '472910', '2026-05-09 14:05:00+05', FALSE),
   (3, 'fatima.noor@university.edu.pk', '906144', '2026-05-09 14:10:00+05', FALSE);
+
+-- Sample community posts (assumes user_ids 1-5 exist)
+INSERT INTO community_posts (user_id, content) VALUES
+(1, 'Anyone else think the wifi in Block B has been unusually fast this week?'),
+(2, 'Lost my blue water bottle near the study room. Please let me know if you find it!'),
+(3, 'Cooking pasta tonight, made too much. First come first served at Room A-204 😄'),
+(4, 'Reminder: the common room TV is for everyone. Please don''t leave it on overnight.'),
+(5, 'Does anyone have a voltmeter I can borrow for a lab tomorrow?'),
+(1, 'The new vending machine on Floor 3 actually has decent snacks. 10/10 recommend.'),
+(2, 'Study group for Thursday finals — anyone interested? Drop a comment!'),
+(3, 'Heads up: hot water might be off tomorrow morning for maintenance.'),
+(4, 'Just listed some textbooks on the marketplace if anyone needs them for next sem.'),
+(5, 'Can we get a whiteboard in the common room? Would be super useful for announcements.');
+
+-- Sample likes
+INSERT INTO post_likes (post_id, user_id) VALUES
+(1, 2), (1, 3), (1, 4),
+(2, 1), (2, 5),
+(3, 1), (3, 2), (3, 4), (3, 5),
+(4, 3), (4, 1),
+(5, 2), (5, 3),
+(6, 4), (6, 5), (6, 1),
+(7, 2), (7, 3), (7, 4),
+(8, 1), (8, 5),
+(9, 3), (9, 2),
+(10, 1), (10, 4);
 
 -- Reset serial sequences after explicit sample IDs
 SELECT setval(pg_get_serial_sequence('users', 'user_id'), (SELECT MAX(user_id) FROM users));
@@ -952,3 +996,27 @@ EXCEPTION
     RAISE NOTICE 'Error processing overdue tickets: %', SQLERRM;
 END;
 $$;
+
+-- Trigger to notify post author when someone likes their post
+CREATE OR REPLACE FUNCTION trg_notify_post_like_fn()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_author_id INT;
+    v_liker_name VARCHAR;
+BEGIN
+    SELECT user_id INTO v_author_id FROM community_posts WHERE post_id = NEW.post_id;
+    SELECT display_name INTO v_liker_name FROM users WHERE user_id = NEW.user_id;
+    
+    -- Don't notify if you like your own post
+    IF v_author_id != NEW.user_id THEN
+        INSERT INTO notifications (user_id, title, body, is_read)
+        VALUES (v_author_id, 'New Like', v_liker_name || ' liked your post.', FALSE);
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_notify_post_like
+AFTER INSERT ON post_likes
+FOR EACH ROW EXECUTE FUNCTION trg_notify_post_like_fn();
