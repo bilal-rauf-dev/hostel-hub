@@ -1,4 +1,4 @@
-# 🏨 HostelHub
+# HostelHub
 
 **A full-stack hostel management system built with Next.js, FastAPI, and PostgreSQL**
 
@@ -12,60 +12,60 @@
 
 ---
 
-## 📑 Table of Contents
-- [📖 Overview](#-overview)
-- [✨ Features](#-features)
-- [🛠️ Tech Stack](#️-tech-stack)
-- [🗄️ Database Architecture](#️-database-architecture)
-- [📁 Project Structure](#-project-structure)
-- [🚀 Getting Started](#-getting-started)
-- [🔑 Environment Variables](#-environment-variables)
-- [📚 API Documentation](#-api-documentation)
-- [👤 Default Credentials](#-default-credentials)
-- [👨‍💻 Team](#-team)
-- [🎓 Academic Info](#-academic-info)
+## Table of Contents
+- [Overview](#overview)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Database Architecture](#database-architecture)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [API Documentation](#api-documentation)
+- [Default Credentials](#default-credentials)
+- [Team](#team)
+- [Academic Info](#academic-info)
 
 ---
 
-## 📖 Overview
+## Overview
 HostelHub is a comprehensive, full-stack management solution tailored for university hostel environments. It empowers students with tools to handle daily operations like submitting maintenance requests, buying and selling items, voting on polls, and accessing important guidelines. For administrators, it offers robust control over user verification, ticketing workflows, community moderation, and broadcast safety alerts, solving the fragmentation often found in campus residential management.
 
 ---
 
-## ✨ Features
+## Features
 
 | Module | Description |
 | :--- | :--- |
-| 🏠 **Dashboard** | A centralized overview with real-time statistics and personalized quick actions. |
-| 🛒 **Marketplace** | Buy and sell items within the hostel community securely. |
-| 🔧 **Maintenance Tickets** | Report, track, and manage room repairs and maintenance requests. |
-| 🔍 **Lost & Found** | Report lost items or post found items to reconnect them with their owners. |
-| 📅 **Events** | Discover, RSVP, and manage upcoming hostel events and gatherings. |
-| 💬 **Community** | Engage in discussions, create posts, and vote on community polls. |
-| 📖 **Guidebook** | Access essential hostel rules, guidelines, and emergency contacts. |
-| 🚨 **Safety Alerts** | Receive immediate, system-wide notifications for critical safety information. |
-| 🔔 **Notifications** | Stay updated with real-time alerts for orders, tickets, and community interactions. |
-| 🛡️ **Admin Panel** | Comprehensive moderation, verification, and settings management for staff. |
+| **Dashboard** | A centralized overview with real-time statistics and personalized quick actions. |
+| **Marketplace** | Buy and sell items within the hostel community securely. |
+| **Maintenance Tickets** | Report, track, and manage room repairs and maintenance requests. |
+| **Lost & Found** | Report lost items or post found items to reconnect them with their owners. |
+| **Events** | Discover, RSVP, and manage upcoming hostel events and gatherings. |
+| **Community** | Engage in discussions, create posts, and vote on community polls. |
+| **Guidebook** | Access essential hostel rules, guidelines, and emergency contacts. |
+| **Safety Alerts** | Receive immediate, system-wide notifications for critical safety information. |
+| **Notifications** | Stay updated with real-time alerts for orders, tickets, and community interactions. |
+| **Admin Panel** | Comprehensive moderation, verification, and settings management for staff. |
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-### 💻 Frontend
+### Frontend
 ![Next JS](https://img.shields.io/badge/Next-black?style=flat-square&logo=next.js&logoColor=white) ![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=flat-square&logo=typescript&logoColor=white) ![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=flat-square&logo=tailwind-css&logoColor=white) ![Framer](https://img.shields.io/badge/Framer-black?style=flat-square&logo=framer&logoColor=blue)
 - **Next.js 14**, **TypeScript**, **Tailwind CSS**, **Framer Motion**
 
-### ⚙️ Backend
+### Backend
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat-square&logo=fastapi) ![Python](https://img.shields.io/badge/python-3670A0?style=flat-square&logo=python&logoColor=ffdd54) ![JWT](https://img.shields.io/badge/JWT-black?style=flat-square&logo=JSON%20web%20tokens)
 - **FastAPI**, **Python**, **psycopg3** (async driver), **JWT** Authentication
 
-### 🗄️ Database
+### Database
 ![Postgres](https://img.shields.io/badge/postgres-%23316192.svg?style=flat-square&logo=postgresql&logoColor=white)
 - **PostgreSQL 15**, **PL/pgSQL**
 
 ---
 
-## 🗄️ Database Architecture
+## Database Architecture
 
 Our robust PostgreSQL database leverages advanced PL/SQL components to ensure data integrity and complex business logic directly at the database layer.
 
@@ -101,7 +101,7 @@ Our robust PostgreSQL database leverages advanced PL/SQL components to ensure da
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
 hostel-hub/
@@ -130,10 +130,10 @@ hostel-hub/
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 <details>
-<summary>🗄️ Database Setup</summary>
+<summary>Database Setup</summary>
 
 1. Install PostgreSQL 15 or higher.
 2. Create a new database named `hostelhub`.
@@ -144,7 +144,7 @@ hostel-hub/
 </details>
 
 <details>
-<summary>⚙️ Backend Setup</summary>
+<summary>Backend Setup</summary>
 
 1. Navigate to the `backend` directory.
 2. Create and activate a Python virtual environment:
@@ -167,7 +167,7 @@ hostel-hub/
 </details>
 
 <details>
-<summary>🖥️ Frontend Setup</summary>
+<summary>Frontend Setup</summary>
 
 1. Navigate to the root directory (`hostel-hub`).
 2. Install Node.js dependencies:
@@ -184,7 +184,7 @@ hostel-hub/
 
 ---
 
-## 🔑 Environment Variables
+## Environment Variables
 
 ### Backend (`backend/.env`)
 | Variable | Description |
@@ -202,7 +202,7 @@ hostel-hub/
 
 ---
 
-## 📚 API Documentation
+## API Documentation
 
 FastAPI automatically generates interactive API documentation. When the backend is running, access it here:
 
@@ -210,7 +210,7 @@ FastAPI automatically generates interactive API documentation. When the backend 
 
 ---
 
-## 👤 Default Credentials
+## Default Credentials
 
 Use these credentials to explore the admin functionality immediately:
 
@@ -220,7 +220,7 @@ Use these credentials to explore the admin functionality immediately:
 
 ---
 
-## 👨‍💻 Team
+## Team
 
 | Name | Student ID | Role |
 | :--- | :--- | :--- |
@@ -229,7 +229,7 @@ Use these credentials to explore the admin functionality immediately:
 
 ---
 
-## 🎓 Academic Info
+## Academic Info
 
 | | |
 | :--- | :--- |
