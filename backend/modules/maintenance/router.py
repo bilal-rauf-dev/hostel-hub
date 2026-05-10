@@ -91,13 +91,13 @@ async def get_tickets(
                     # Admins see all tickets
                     await cur.execute(
                         """
-                        SELECT mt.ticket_id, mt.student_id, mt.title, mt.description,
-                               mt.category, mt.priority, mt.room_number, mt.status,
+                        SELECT mt.ticket_id, mt.student_id, mt.description,
+                               mt.category, mt.room_number, mt.status,
                                mt.assigned_to, mt.created_at, mt.updated_at,
                                u.display_name as student_name, u.room_number as student_room
                         FROM maintenance_tickets mt
                         JOIN users u ON mt.student_id = u.user_id
-                        ORDER BY mt.priority DESC, mt.created_at DESC
+                        ORDER BY mt.created_at DESC
                         """
                     )
                 tickets = await cur.fetchall()
@@ -106,6 +106,29 @@ async def get_tickets(
     except Exception as e:
         return json_response(False, None, f"Failed to retrieve tickets: {str(e)}")
 
+@router.get("/tickets/all")
+async def get_all_tickets(
+    admin: dict = Depends(require_admin),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Get all maintenance tickets (admin only)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    """
+                    SELECT mt.ticket_id, mt.description, mt.category, mt.room_number,
+                           mt.status, mt.created_at, mt.assigned_to,
+                           u.display_name AS student_name
+                    FROM maintenance_tickets mt
+                    LEFT JOIN users u ON mt.student_id = u.user_id
+                    ORDER BY mt.created_at DESC
+                    """
+                )
+                tickets = await cur.fetchall()
+        return json_response(True, tickets, "All tickets retrieved successfully")
+    except Exception as e:
+        return json_response(False, None, f"Failed to retrieve tickets: {str(e)}")
 
 @router.patch("/tickets/{ticket_id}/status")
 async def update_ticket_status(
@@ -114,28 +137,21 @@ async def update_ticket_status(
     admin: dict = Depends(require_admin),
     pool=Depends(get_db_pool),
 ) -> dict:
-    """Update ticket status (admin only, calls stored procedure)."""
     try:
         async with pool.connection() as conn:
-            async with conn.cursor(row_factory=dict_row) as cur:
-                                # Call stored procedure: SELECT * FROM update_ticket_status($1, $2, $3)
-                                await cur.execute(
-                                        """
-                                        SELECT * FROM update_ticket_status(
-                                            %s,
-                                            %s::ticket_status,
-                                            %s
-                                        )
-                                        """,
-                                        (ticket_id, request_body.status, admin["user_id"]),
-                                )
-                                result = await cur.fetchone()
-                                await conn.commit()
+            async with conn.cursor() as cur:  # no dict_row here
+                await cur.execute(
+                    "SELECT update_ticket_status(%s, %s::ticket_status, %s)",
+                    (ticket_id, request_body.status, admin["user_id"]),
+                )
+                result = await cur.fetchone()
+                await conn.commit()
 
-        if result and result.get("ticket_id"):
-            return json_response(True, result, "Ticket status updated successfully")
+        msg = result[0] if result else "Unknown error"
+        if msg == "SUCCESS":
+            return json_response(True, {"ticket_id": ticket_id, "status": request_body.status}, "Ticket status updated successfully")
         else:
-            return json_response(False, None, "Failed to update ticket status")
+            return json_response(False, None, msg)
     except Exception as e:
         return json_response(False, None, f"Failed to update ticket status: {str(e)}")
 
@@ -153,7 +169,7 @@ async def assign_ticket(
             async with conn.cursor(row_factory=dict_row) as cur:
                 # Check if staff user exists
                 await cur.execute(
-                    "SELECT user_id FROM users WHERE user_id = %s AND role IN ('admin', 'staff')",
+                    "SELECT user_id FROM users WHERE user_id = %s AND role = 'admin'",
                     (request_body.assigned_to,),
                 )
                 staff = await cur.fetchone()
@@ -167,8 +183,8 @@ async def assign_ticket(
                     UPDATE maintenance_tickets
                     SET assigned_to = %s
                     WHERE ticket_id = %s
-                    RETURNING ticket_id, student_id, title, description, category,
-                              priority, room_number, status, assigned_to, created_at, updated_at
+                    RETURNING ticket_id, student_id, description, category,
+                    room_number, status, assigned_to, created_at
                     """,
                     (request_body.assigned_to, ticket_id),
                 )
@@ -181,3 +197,26 @@ async def assign_ticket(
             return json_response(False, None, "Ticket not found")
     except Exception as e:
         return json_response(False, None, f"Failed to assign ticket: {str(e)}")
+
+@router.delete("/tickets/{ticket_id}")
+async def delete_ticket(
+    ticket_id: int,
+    admin: dict = Depends(require_admin),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Delete a maintenance ticket (admin only)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    "DELETE FROM maintenance_tickets WHERE ticket_id = %s RETURNING ticket_id",
+                    (ticket_id,),
+                )
+                result = await cur.fetchone()
+                await conn.commit()
+
+        if not result:
+            return json_response(False, None, "Ticket not found")
+        return json_response(True, None, "Ticket deleted successfully")
+    except Exception as e:
+        return json_response(False, None, f"Failed to delete ticket: {str(e)}")

@@ -108,6 +108,27 @@ async def update_current_user_profile(
     except Exception as e:
         return json_response(False, None, f"Profile update failed: {str(e)}")
 
+@router.get("/")
+async def get_all_users(
+    admin: dict = Depends(require_admin),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Get all users (admin only)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    """
+                    SELECT user_id, email, student_id, display_name, contact_number,
+                           room_number, role, is_verified, is_suspended, created_at
+                    FROM users
+                    ORDER BY created_at DESC
+                    """
+                )
+                users = await cur.fetchall()
+        return json_response(True, users, "Users retrieved successfully")
+    except Exception as e:
+        return json_response(False, None, f"Failed to retrieve users: {str(e)}")
 
 @router.patch("/{user_id}/verify")
 async def verify_user(

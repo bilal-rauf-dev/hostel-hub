@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from 'motion/react'
 import { 
+  Home, 
   Building2, 
   LayoutDashboard, 
   ShoppingBag, 
@@ -41,8 +42,10 @@ import { StaffTicketsView } from './staff-tickets-view'
 import { VerificationView } from './verification-view'
 import { SafetyAlertsView } from './safety-alerts-view'
 import { AdminSettingsView } from './admin-settings-view'
-import { notificationsApi, authApi } from '@/lib/api'
-import { clearTokens } from '@/lib/auth'
+import { AdminCommunityView } from './admin-community-view'
+import { notificationsApi, authApi, usersApi } from '@/lib/api'
+import { clearTokens, getCurrentUser } from '@/lib/auth'
+
 
 const MENU_ITEMS = [
   { icon: LayoutDashboard, label: 'Overview' },
@@ -52,7 +55,6 @@ const MENU_ITEMS = [
   { icon: Calendar, label: 'Events' },
   { icon: MessageSquare, label: 'Community' },
   { icon: BookOpen, label: 'Guidebook' },
-  { icon: Settings, label: 'Settings' },
 ]
 
 interface DashboardViewProps {
@@ -66,14 +68,16 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
   const [showNotifications, setShowNotifications] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [toasts, setToasts] = useState<{id: number, msg: string}[]>([])
+  const [toasts, setToasts] = useState<{id: number, msg: string, type: 'success' | 'error' | 'info'}[]>([])
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [notificationsLoading, setNotificationsLoading] = useState(true)
+  const currentUser = getCurrentUser()
+  const [profile, setProfile] = useState<{ display_name: string; email: string; user_id: number } | null>(null)
 
-  const addToast = (msg: string) => {
+  const addToast = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Date.now() + Math.random()
-    setToasts(prev => [...prev, { id, msg }])
+    setToasts(prev => [...prev, { id, msg, type }])
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id))
     }, 4000)
@@ -97,6 +101,12 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
     }
 
     loadNotifications()
+    ;(async () => {
+      try {
+        const profileRes = await usersApi.getMe()
+        if (profileRes.data?.success) setProfile(profileRes.data.data)
+      } catch (_) {}
+    })()
     // Reload notifications every 30 seconds
     const interval = setInterval(loadNotifications, 30000)
     return () => clearInterval(interval)
@@ -134,8 +144,9 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
 
   // Simulate a welcome toast
   useEffect(() => {
-    setTimeout(() => addToast(`Welcome back to the Hostel Hub!`), 1500)
-  }, [])
+  const t = setTimeout(() => addToast(`Welcome back to the Hostel Hub!`), 1500)
+  return () => clearTimeout(t)
+}, [])
 
   // notifications state is loaded from API (see useEffect above)
 
@@ -183,6 +194,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                   { icon: Wrench, label: 'Staff Tickets' },
                   { icon: Users, label: 'Verification' },
                   { icon: AlertCircle, label: 'Safety alerts' },
+                  { icon: MessageSquare, label: 'Community' },
                   { icon: Settings, label: 'Controls' },
                 ]).map((item) => (
                   <motion.button
@@ -221,23 +233,24 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
       </AnimatePresence>
 
       {/* Sidebar - Desktop */}
-      <aside className="hidden lg:flex w-72 flex-col bg-white border-r border-[#F0F0EE] p-8">
-        <div className="flex items-center gap-3 mb-12">
+      <aside className="hidden lg:flex w-72 flex-col bg-white border-r border-[#F0F0EE] p-6">
+        <div className="flex items-center gap-3 mb-8">
           <div className="w-12 h-12 bg-[#4D5D53] rounded-[1.5rem] flex items-center justify-center text-white shadow-lg shadow-[#4D5D53]/20">
             <Users className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-black tracking-tighter">Hostel</h1>
-            <p className="text-[10px] font-black text-[#D4A373] uppercase tracking-[0.2em] -mt-1">Resident Hub</p>
+            <h1 className="text-2xl font-black tracking-tighter">Hostel Hub</h1>
+            <p className="text-[10px] font-black text-[#D4A373] uppercase tracking-[0.2em] -mt-1">FAST NUCES</p>
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-1 mb-4">
           {(!isAdminMode ? MENU_ITEMS : [
             { icon: LayoutDashboard, label: 'Overview' },
             { icon: Wrench, label: 'Staff Tickets' },
             { icon: Users, label: 'Verification' },
             { icon: AlertCircle, label: 'Safety alerts' },
+            { icon: MessageSquare, label: 'Community' },
             { icon: Settings, label: 'Controls' },
           ]).map((item) => (
             <motion.button
@@ -399,7 +412,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                 }}
                 className={`w-10 h-10 rounded-xl border-2 shadow-sm overflow-hidden flex items-center justify-center text-sm text-[10px] font-black tracking-widest cursor-pointer transition-all ${showAccount ? 'bg-[#4D5D53] border-[#4D5D53] text-white' : 'bg-[#D4A373] border-white text-white'}`}
               >
-                AR
+                {profile?.display_name?.substring(0, 2).toUpperCase() ?? '??'}
               </motion.div>
 
               <AnimatePresence>
@@ -412,18 +425,20 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                     className="absolute right-0 mt-3 w-64 bg-white/95 backdrop-blur-xl border border-white/50 rounded-[2.5rem] shadow-2xl shadow-black/5 overflow-hidden z-50 p-2"
                   >
                     <div className="p-5 flex items-center gap-4 border-b border-black/5 mb-2">
-                       <div className="w-10 h-10 rounded-xl bg-[#D4A373] flex items-center justify-center text-white font-black text-xs">AR</div>
+                       <div className="w-10 h-10 rounded-xl bg-[#D4A373] flex items-center justify-center text-white font-black text-xs">
+                         {profile?.display_name?.substring(0, 2).toUpperCase() ?? '??'}
+                       </div>
                        <div>
-                         <p className="text-sm font-black text-[#4D5D53]">Alex Rivers</p>
-                         <p className="text-[8px] font-bold text-[#9A9A9A] tracking-wider uppercase">Resident • Block B</p>
-                         <p className="text-[8px] font-black text-[#D4A373] tracking-wider uppercase mt-1">Role • {userRole}</p>
+                         <p className="text-sm font-black text-[#4D5D53]">{profile?.display_name ?? 'User'}</p>
+                         <p className="text-[8px] font-bold text-[#9A9A9A] tracking-wider uppercase">{isAdminMode ? 'Admin' : 'Student'} • #{profile?.user_id}</p>
+                         <p className="text-[8px] font-black text-[#D4A373] tracking-wider uppercase mt-1">{profile?.email}</p>
                        </div>
                     </div>
                     <div className="space-y-1 px-1">
                       {[
                         { label: 'My Profile', icon: User, tab: 'Settings' },
                         { label: 'Orders', icon: ShoppingBag, tab: 'Marketplace' },
-                        { label: 'Security', icon: ShieldCheck, tab: 'Settings' },
+                        { label: 'Controls', icon: Settings, tab: 'Settings' }
                       ].map((item) => (
                         <motion.button
                           key={item.label}
@@ -473,13 +488,13 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                 transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
               >
                 {activeTab === 'Overview' && <OverviewView onNavigate={setActiveTab} />}
-                {activeTab === 'Marketplace' && <MarketplaceView />}
-                {activeTab === 'Tickets' && <TicketsView />}
-                {activeTab === 'Events' && <EventsView />}
-                {activeTab === 'Community' && <CommunityView />}
+                {activeTab === 'Marketplace' && <MarketplaceView onToast={addToast} />}
+                {activeTab === 'Tickets' && <TicketsView onToast={addToast} />}
+                {activeTab === 'Events' && <EventsView onToast={addToast} />}
+                {activeTab === 'Community' && <CommunityView onToast={addToast} />}
                 {activeTab === 'Guidebook' && <GuidebookView />}
-                {activeTab === 'Settings' && <SettingsView />}
-                {activeTab === 'Lost & Found' && <LostAndFoundView />}
+                {activeTab === 'Settings' && <SettingsView onToast={addToast} />}
+                {activeTab === 'Lost & Found' && <LostAndFoundView onToast={addToast} />}
               </motion.div>
             ) : (
               <motion.div
@@ -489,11 +504,12 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                 exit={{ opacity: 0, x: -30, filter: 'blur(10px)' }}
                 transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
               >
-                {activeTab === 'Overview' && <AdminDashboardView />}
-                {activeTab === 'Staff Tickets' && <StaffTicketsView />}
+                {activeTab === 'Overview' && <AdminDashboardView onNavigate={setActiveTab} />}
+                {activeTab === 'Staff Tickets' && <StaffTicketsView onToast={addToast} />}
                 {activeTab === 'Verification' && <VerificationView />}
                 {activeTab === 'Safety alerts' && <SafetyAlertsView />}
-                {activeTab === 'Controls' && <AdminSettingsView />}
+                {activeTab === 'Controls' && <AdminSettingsView onToast={addToast} />}
+                {activeTab === 'Community' && <AdminCommunityView onToast={addToast} />}
               </motion.div>
             )}
             
@@ -538,12 +554,23 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                 exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
                 className="bg-[#4D5D53]/95 backdrop-blur-xl text-white px-6 py-4 rounded-[1.5rem] shadow-2xl flex items-center gap-4 border border-white/10 pointer-events-auto min-w-[300px]"
               >
-                <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
-                   <Bell className="h-4 w-4 text-[#E9EDC9]" />
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                  toast.type === 'success' ? 'bg-emerald-500/20' 
+                  : toast.type === 'error' ? 'bg-red-500/20' 
+                  : 'bg-white/10'
+                }`}>
+                  {toast.type === 'success' 
+                    ? <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    : toast.type === 'error'
+                    ? <AlertCircle className="h-4 w-4 text-red-400" />
+                    : <Bell className="h-4 w-4 text-[#E9EDC9]" />
+                  }
                 </div>
                 <div>
-                   <p className="text-[10px] font-black uppercase tracking-widest text-[#E9EDC9]">New Activity</p>
-                   <p className="text-xs font-bold">{toast.msg}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#E9EDC9]">
+                    {toast.type === 'success' ? 'Success' : toast.type === 'error' ? 'Error' : 'New Activity'}
+                  </p>
+                  <p className="text-xs font-bold">{toast.msg}</p>
                 </div>
               </motion.div>
             ))}

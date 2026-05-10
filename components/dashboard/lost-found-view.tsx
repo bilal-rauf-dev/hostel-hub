@@ -22,14 +22,15 @@ import Image from 'next/image'
 
 
 
-export function LostAndFoundView() {
+interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => void }
+
+export function LostAndFoundView({ onToast }: Props) {
   const currentUser = getCurrentUser()
   const [filter, setFilter] = useState('All')
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
-  const [showReportModal, setShowReportModal] = useState(false)
+    const [showReportModal, setShowReportModal] = useState(false)
   const [reportType, setReportType] = useState<'Lost'|'Found'>('Lost')
   const [reportTitle, setReportTitle] = useState('')
   const [reportDesc, setReportDesc] = useState('')
@@ -38,11 +39,7 @@ export function LostAndFoundView() {
   const [reportAnonymous, setReportAnonymous] = useState(false)
   const [reportSubmitting, setReportSubmitting] = useState(false)
 
-  const pushToast = (message: string, type: 'success' | 'error') => {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
-  }
-
+  
   useEffect(() => {
     let mounted = true
     const load = async () => {
@@ -87,8 +84,8 @@ export function LostAndFoundView() {
       setReportLocation('')
       setReportDate('')
       setReportAnonymous(false)
-      pushToast('Report submitted', 'success')
-    } catch (e) { console.error(e); pushToast('Failed to submit report', 'error') }
+      onToast('Report submitted', 'success')
+    } catch (e) { console.error(e); onToast('Failed to submit report', 'error') }
     finally { setReportSubmitting(false) }
   }
 
@@ -115,12 +112,7 @@ export function LostAndFoundView() {
         </motion.button>
       </div>
 
-      {toast && (
-        <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-          {toast.message}
-        </div>
-      )}
-
+      
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-3xl border border-[#F0F0EE] shadow-sm">
         <div className="flex gap-2">
           {['All', 'Lost', 'Found'].map(f => (
@@ -225,8 +217,8 @@ export function LostAndFoundView() {
                                 await lostFoundApi.resolveItem(item.item_id)
                                 const refreshRes = await lostFoundApi.getItems()
                                 if (refreshRes.data?.success) setItems(refreshRes.data.data || [])
-                                pushToast('Item marked as found!', 'success')
-                              } catch { pushToast('Failed to update item', 'error') }
+                                onToast('Item marked as found!', 'success')
+                              } catch { onToast('Failed to update item', 'error') }
                             }}
                             className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-colors"
                           >
@@ -240,8 +232,8 @@ export function LostAndFoundView() {
                               await lostFoundApi.archiveItem(item.item_id)
                               const refreshRes = await lostFoundApi.getItems()
                               if (refreshRes.data?.success) setItems(refreshRes.data.data || [])
-                              pushToast('Item deleted', 'success')
-                            } catch { pushToast('Failed to delete item', 'error') }
+                              onToast('Item deleted', 'success')
+                            } catch { onToast('Failed to delete item', 'error') }
                           }}
                           className="px-3 py-1.5 border border-red-400 text-red-400 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-50 transition-colors"
                         >

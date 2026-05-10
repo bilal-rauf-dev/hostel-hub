@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 
 import { useState, useEffect } from 'react'
-import { usersApi, authApi } from '../../lib/api'
+import { usersApi, authApi, notificationsApi } from '../../lib/api'
 import { clearTokens } from '../../lib/auth'
 
 const SETTINGS_SECTIONS = [
@@ -23,8 +23,7 @@ const SETTINGS_SECTIONS = [
     title: 'Account Settings',
     items: [
       { id: 'profile', icon: User, label: 'Profile Information', desc: 'Update your name, bio and profile picture' },
-      { id: 'security', icon: Shield, label: 'Password & Security', desc: 'Manage your password and 2FA' },
-      { id: 'billing', icon: CreditCard, label: 'Billing & Payments', desc: 'View invoices and manage payment methods' }
+      { id: 'billing', icon: CreditCard, label: 'Billing & Payments', desc: 'Manage your payment methods and invoices' },
     ]
   },
   {
@@ -32,17 +31,21 @@ const SETTINGS_SECTIONS = [
     items: [
       { id: 'notifications', icon: Bell, label: 'Notifications', desc: 'Personalize your alert preferences' },
       { id: 'display', icon: Moon, label: 'Display & Mode', desc: 'Toggle dark mode and interface scaling' },
-      { id: 'device', icon: Smartphone, label: 'Device Management', desc: 'View active sessions and logged-in devices' }
     ]
   }
 ]
 
-export function SettingsView() {
+interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => void }
+
+export function SettingsView({ onToast }: Props) {
   const [activeTab, setActiveTab] = useState<'General' | 'Profile'>('General')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
+    const [darkMode, setDarkMode] = useState(false)
+  const [expandedSetting, setExpandedSetting] = useState<string | null>(null)
+  const [settingsNotifications, setSettingsNotifications] = useState<any[]>([])
+  const [settingsUnreadCount, setSettingsUnreadCount] = useState(0)
 
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
@@ -50,11 +53,7 @@ export function SettingsView() {
   const [roomNumber, setRoomNumber] = useState('')
   const [studentId, setStudentId] = useState('')
 
-  const pushToast = (message: string, type: 'success' | 'error') => {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
-  }
-
+  
   useEffect(() => {
     let mounted = true
     const load = async () => {
@@ -74,6 +73,13 @@ export function SettingsView() {
         } else {
           setError(res.data?.message || 'Failed to load profile')
         }
+        try {
+          const notifRes = await notificationsApi.getNotifications()
+          if (notifRes.data?.success) {
+            setSettingsNotifications(notifRes.data.data.notifications || [])
+            setSettingsUnreadCount(notifRes.data.data.unread_count || 0)
+          }
+        } catch (_) {}
       } catch (err: any) {
         setError(err?.message || 'Network error')
       } finally {
@@ -85,6 +91,16 @@ export function SettingsView() {
     return () => { mounted = false }
   }, [])
 
+  const loadSettingsNotifications = async () => {
+    try {
+      const res = await notificationsApi.getNotifications()
+      if (res.data?.success) {
+        setSettingsNotifications(res.data.data.notifications || [])
+        setSettingsUnreadCount(res.data.data.unread_count || 0)
+      }
+    } catch (_) {}
+  }
+
   const handleSave = async () => {
     try {
       setSaving(true)
@@ -92,13 +108,13 @@ export function SettingsView() {
       const res = await usersApi.updateMe(displayName, contactNumber, undefined, roomNumber)
       if (!res.data?.success) {
         setError(res.data?.message || 'Failed to save')
-        pushToast(res.data?.message || 'Failed to save', 'error')
+        onToast(res.data?.message || 'Failed to save', 'error')
       } else {
-        pushToast('Settings saved', 'success')
+        onToast('Settings saved', 'success')
       }
     } catch (err: any) {
       setError(err?.message || 'Network error')
-      pushToast(err?.message || 'Network error', 'error')
+      onToast(err?.message || 'Network error', 'error')
     } finally {
       setSaving(false)
     }
@@ -119,7 +135,8 @@ export function SettingsView() {
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
-      className="space-y-8 pb-20"
+      className={`space-y-8 pb-20 ${darkMode ? 'dark' : ''}`}
+      style={{ background: darkMode ? '#1a1a1a' : undefined, color: darkMode ? '#f0f0f0' : undefined, borderRadius: '1rem', padding: darkMode ? '1.5rem' : undefined, transition: 'all 0.3s ease' }}
     >
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
         <h3 className="text-2xl font-black text-[#4D5D53] tracking-tight">System Settings</h3>
@@ -139,12 +156,7 @@ export function SettingsView() {
         </div>
       </div>
 
-      {toast && (
-        <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-          {toast.message}
-        </div>
-      )}
-
+      
       <AnimatePresence mode="wait">
         {activeTab === 'General' ? (
           <motion.div
@@ -174,21 +186,97 @@ export function SettingsView() {
                         initial={{ opacity: 0, x: -20, filter: 'blur(8px)' }}
                         animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                         transition={{ delay: 0.1 * i + (idx * 0.3), duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                        whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#D4A373' }}
-                        className="bg-white p-6 rounded-[2rem] border border-[#F0F0EE] group cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300 flex items-center justify-between"
+                        className="bg-white rounded-[2rem] border border-[#F0F0EE] group cursor-pointer shadow-sm overflow-hidden transition-all duration-300"
+                        onClick={() => {
+                          if (item.id === 'profile') { setActiveTab('Profile'); return }
+                          setExpandedSetting(expandedSetting === item.id ? null : item.id)
+                        }}
                       >
-                        <div className="flex items-center gap-5">
-                          <div className="w-14 h-14 bg-[#FAF9F6] border border-[#F0F0EE] rounded-2xl flex items-center justify-center text-[#BDBDBD] group-hover:bg-white group-hover:text-[#D4A373] group-hover:shadow-md transition-all duration-500 transform group-hover:rotate-6">
-                            <item.icon className="h-6 w-6" />
+                        <div className="p-6 flex items-center justify-between hover:bg-[#FAF9F6] transition-colors">
+                          <div className="flex items-center gap-5">
+                            <div className="w-14 h-14 bg-[#FAF9F6] border border-[#F0F0EE] rounded-2xl flex items-center justify-center text-[#BDBDBD] group-hover:bg-white group-hover:text-[#D4A373] group-hover:shadow-md transition-all duration-500 transform group-hover:rotate-6">
+                              <item.icon className="h-6 w-6" />
+                            </div>
+                            <div>
+                              <h5 className="text-lg font-black text-[#4D5D53] tracking-tighter group-hover:text-[#D4A373] transition-colors">{item.label}</h5>
+                              <p className="text-[10px] text-[#9A9A9A] font-black uppercase tracking-[0.15em] mt-1">{item.desc}</p>
+                            </div>
                           </div>
-                          <div>
-                            <h5 className="text-lg font-black text-[#4D5D53] tracking-tighter group-hover:text-[#D4A373] transition-colors">{item.label}</h5>
-                            <p className="text-[10px] text-[#9A9A9A] font-black uppercase tracking-[0.15em] mt-1">{item.desc}</p>
-                          </div>
+                          <motion.div
+                            animate={{ rotate: expandedSetting === item.id ? 90 : 0 }}
+                            className="w-10 h-10 rounded-xl bg-[#FAF9F6] border border-[#F0F0EE] flex items-center justify-center text-[#BDBDBD] group-hover:bg-[#4D5D53] group-hover:text-white transition-all duration-500"
+                          >
+                            <ChevronRight className="h-5 w-5" />
+                          </motion.div>
                         </div>
-                        <div className="w-10 h-10 rounded-xl bg-[#FAF9F6] border border-[#F0F0EE] flex items-center justify-center text-[#BDBDBD] group-hover:bg-[#4D5D53] group-hover:text-white transition-all duration-500 group-hover:translate-x-1">
-                          <ChevronRight className="h-5 w-5" />
-                        </div>
+
+                        <AnimatePresence>
+                          {expandedSetting === item.id && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                              className="overflow-hidden border-t border-[#F0F0EE]"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {item.id === 'display' && (
+                                <div className="p-6 flex items-center justify-between">
+                                  <div>
+                                    <p className="text-sm font-black text-[#4D5D53]">Dark Mode</p>
+                                    <p className="text-[10px] text-[#9A9A9A] font-bold mt-1">Switch to a darker interface</p>
+                                  </div>
+                                  <button
+                                    onClick={() => setDarkMode(!darkMode)}
+                                    className={`w-12 h-6 rounded-full transition-colors duration-300 relative ${darkMode ? 'bg-[#4D5D53]' : 'bg-[#E9EDC9]'}`}
+                                  >
+                                    <motion.div
+                                      animate={{ x: darkMode ? 24 : 2 }}
+                                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                      className="w-5 h-5 bg-white rounded-full shadow absolute top-0.5"
+                                    />
+                                  </button>
+                                </div>
+                              )}
+                              {item.id === 'notifications' && (
+                                <div className="p-6 space-y-4">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <p className="text-sm font-black text-[#4D5D53]">{settingsUnreadCount} unread</p>
+                                    <button
+                                      onClick={async () => {
+                                        await notificationsApi.markAllAsRead()
+                                        await loadSettingsNotifications()
+                                      }}
+                                      className="text-[10px] font-black uppercase tracking-widest text-[#D4A373] hover:underline"
+                                    >
+                                      Mark all read
+                                    </button>
+                                  </div>
+                                  {settingsNotifications.length === 0 ? (
+                                    <p className="text-sm text-[#9A9A9A]">No notifications</p>
+                                  ) : (
+                                    settingsNotifications.slice(0, 5).map((notif) => (
+                                      <div key={notif.notification_id} className="flex gap-3 p-3 bg-[#FAF9F6] rounded-2xl">
+                                        <Bell className="h-4 w-4 text-[#D4A373] shrink-0 mt-0.5" />
+                                        <div>
+                                          <p className="text-xs font-bold text-[#4D5D53]">{notif.title}</p>
+                                          <p className="text-[10px] text-[#9A9A9A] mt-0.5">{notif.body}</p>
+                                        </div>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              )}
+                              {item.id === 'billing' && (
+                                <div className="p-6 text-center space-y-2">
+                                  <CreditCard className="h-8 w-8 text-[#BDBDBD] mx-auto" />
+                                  <p className="text-sm font-black text-[#4D5D53]">No payment methods on file</p>
+                                  <p className="text-[10px] text-[#9A9A9A] font-bold">Billing integration coming soon</p>
+                                </div>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </motion.div>
                     ))}
                   </div>
@@ -215,11 +303,11 @@ export function SettingsView() {
                     </button>
                   </div>
                   <div className="text-center md:text-left">
-                     <h4 className="text-2xl font-black text-[#4D5D53] tracking-tight">Alex Rivers</h4>
-                     <p className="text-sm text-[#9A9A9A] font-bold">alex.rivers@university.edu</p>
+                     <h4 className="text-2xl font-black text-[#4D5D53] tracking-tight">{displayName || 'Your Name'}</h4>
+                     <p className="text-sm text-[#9A9A9A] font-bold">{email}</p>
                      <div className="mt-4 flex flex-wrap gap-2 justify-center md:justify-start">
                         <span className="px-3 py-1 bg-[#E9EDC9] text-[#4D5D53] rounded-full text-[8px] font-black uppercase tracking-widest">Resident</span>
-                        <span className="px-3 py-1 bg-[#FAF9F6] border border-[#F0F0EE] text-[#9A9A9A] rounded-full text-[8px] font-black uppercase tracking-widest">Block B • Room 402</span>
+                        <span className="px-3 py-1 bg-[#FAF9F6] border border-[#F0F0EE] text-[#9A9A9A] rounded-full text-[8px] font-black uppercase tracking-widest">{roomNumber ? `Room ${roomNumber}` : 'No room assigned'}</span>
                      </div>
                   </div>
                </div>

@@ -86,7 +86,9 @@ function CreateListingForm({ onDone, onCancel }: { onDone: (success: boolean, me
   )
 }
 
-export function MarketplaceView() {
+interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => void }
+
+export function MarketplaceView({ onToast }: Props) {
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [view, setView] = useState<'Market' | 'Orders' | 'Listings'>('Market')
   const [listings, setListings] = useState<any[]>([])
@@ -97,33 +99,28 @@ export function MarketplaceView() {
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState('')
-  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
-  const [quantityModal, setQuantityModal] = useState<{ visible: boolean; listing?: any }>({ visible: false })
+    const [quantityModal, setQuantityModal] = useState<{ visible: boolean; listing?: any }>({ visible: false })
   const [quantityValue, setQuantityValue] = useState(1)
   const [orderDetailModal, setOrderDetailModal] = useState<{ visible: boolean; order?: any }>({ visible: false })
 
-  const pushToast = (message: string, type: 'success' | 'error') => {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
-  }
-
+  
   const handlePlaceOrder = async () => {
     if (!quantityModal.listing) return
     try {
       const res = await marketplaceApi.placeOrder(quantityModal.listing.listing_id, quantityValue)
       if (res.data?.success) {
-        pushToast('Order placed successfully', 'success')
+        onToast('Order placed successfully', 'success')
         setQuantityModal({ visible: false })
         setQuantityValue(1)
         await loadMarketplace()
       } else {
       setQuantityModal({ visible: false })
-        pushToast(res.data?.message || 'Failed to place order', 'error')
+        onToast(res.data?.message || 'Failed to place order', 'error')
       }
     } catch (err: any) {
       setQuantityModal({ visible: false })
       setQuantityValue(1)
-      pushToast(err?.response?.data?.message || err?.message || 'Network error', 'error')
+      onToast(err?.response?.data?.message || err?.message || 'Network error', 'error')
     }
   }
 
@@ -199,12 +196,7 @@ export function MarketplaceView() {
         </div>
       </div>
 
-      {toast && (
-        <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-          {toast.message}
-        </div>
-      )}
-
+      
       {/* Create Listing Modal */}
       {creating && createPortal(
         <AnimatePresence>
@@ -233,15 +225,15 @@ export function MarketplaceView() {
               <CreateListingForm
                 onDone={async (success, message) => {
                   if (success) {
-                    pushToast(message || 'Listing created successfully', 'success')
+                    onToast(message || 'Listing created successfully', 'success')
                     setCreating(false)
                     try {
                       await loadMarketplace()
                     } catch (err: any) {
-                      pushToast(err?.message || 'Failed to refresh listings', 'error')
+                      onToast(err?.message || 'Failed to refresh listings', 'error')
                     }
                   } else {
-                    pushToast(message || 'Failed to create listing', 'error')
+                    onToast(message || 'Failed to create listing', 'error')
                   }
                 }}
                 onCancel={() => setCreating(false)}
@@ -293,15 +285,35 @@ export function MarketplaceView() {
                 </div>
               </div>
               <div className="flex items-center gap-4 mb-6">
-                <button onClick={() => setQuantityValue(Math.max(1, quantityValue - 1))} className="px-4 py-2 bg-[#FAF9F6] rounded-lg border">-</button>
+                <motion.button
+                  whileHover={{ scale: 1.1, backgroundColor: '#E9EDC9' }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setQuantityValue(Math.max(1, quantityValue - 1))}
+                  className="px-4 py-2 bg-[#FAF9F6] rounded-lg border text-lg font-black transition-colors"
+                >-</motion.button>
                 <input type="number" min="1" max={parseInt(quantityModal?.listing?.quantity) || 99} value={quantityValue.toString()} onChange={(e) => setQuantityValue(Math.min(parseInt(quantityModal?.listing?.quantity) || 99, Math.max(1, parseInt(e.target.value) || 1)))} className="flex-1 p-3 border rounded-lg text-center text-lg font-bold" />
-                <button onClick={() => setQuantityValue(Math.min(parseInt(quantityModal?.listing?.quantity) || 99, quantityValue + 1))} className="px-4 py-2 bg-[#FAF9F6] rounded-lg border">+</button>
+                <motion.button
+                  whileHover={{ scale: 1.1, backgroundColor: '#E9EDC9' }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setQuantityValue(Math.min(parseInt(quantityModal?.listing?.quantity) || 99, quantityValue + 1))}
+                  className="px-4 py-2 bg-[#FAF9F6] rounded-lg border text-lg font-black transition-colors"
+                >+</motion.button>
               </div>
               <p className="text-sm text-[#9A9A9A] mb-4">Max available: {parseInt(quantityModal?.listing?.quantity) || 99}</p>
-              <p className="text-lg font-black text-[#4D5D53] mb-6">Total: ${(quantityValue * (quantityModal.listing.price || 0)).toFixed(2)}</p>
+              <p className="text-lg font-black text-[#4D5D53] mb-6">Total: Rs.{(quantityValue * (quantityModal.listing.price || 0)).toFixed(2)}</p>
               <div className="flex justify-end gap-3">
-                <button onClick={() => setQuantityModal({ visible: false })} className="px-4 py-2 rounded-xl border">Cancel</button>
-                <button onClick={handlePlaceOrder} className="px-4 py-2 bg-[#4D5D53] text-white rounded-xl">Confirm</button>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setQuantityModal({ visible: false })}
+                  className="px-4 py-2 rounded-xl border font-bold text-sm hover:border-[#3D4D43] transition-colors duration-150"
+                >Cancel</motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.02, backgroundColor: '#3D4D43' }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={handlePlaceOrder}
+                  className="px-4 py-2 bg-[#4D5D53] text-white rounded-xl font-bold text-sm shadow-lg shadow-[#4D5D53]/20"
+                >Confirm Order</motion.button>
               </div>
             </motion.div>
           </motion.div>
@@ -345,7 +357,7 @@ export function MarketplaceView() {
                 </div>
                 <div className="flex justify-between py-3 border-b">
                   <span className="text-sm text-[#9A9A9A]">Total Price</span>
-                  <span className="font-bold">${orderDetailModal.order.total_price || orderDetailModal.order.price || '0.00'}</span>
+                  <span className="font-bold">Rs.{orderDetailModal.order.total_price || orderDetailModal.order.price || '0.00'}</span>
                 </div>
                 <div className="flex justify-between py-3 border-b">
                   <span className="text-sm text-[#9A9A9A]">Seller</span>
@@ -472,7 +484,7 @@ export function MarketplaceView() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-black text-[#4D5D53] tracking-tighter">${product.price}</p>
+                      <p className="text-xl font-black text-[#4D5D53] tracking-tighter">Rs.{product.price}</p>
                       {product.seller_id === currentUser?.user_id
                         ? <p className="text-[9px] text-emerald-600 font-black uppercase tracking-widest mt-0.5">Your Item</p>
                         : <p className="text-[9px] text-[#D4A373] font-black uppercase tracking-widest mt-0.5">{product.status}</p>
@@ -541,7 +553,7 @@ export function MarketplaceView() {
                   <div>
                     <span className="text-[10px] font-black text-[#D4A373] uppercase tracking-widest">{listing.category}</span>
                     <h4 className="font-bold text-[#4D5D53]">{listing.title}</h4>
-                    <p className="text-[10px] text-[#9A9A9A] font-bold">${listing.price} • {listing.quantity} remaining</p>
+                    <p className="text-[10px] text-[#9A9A9A] font-bold">Rs.{listing.price} • {listing.quantity} remaining</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -570,7 +582,7 @@ export function MarketplaceView() {
                     </span>
                     <h4 className="font-bold text-[#4D5D53]">{order.item_title}</h4>
                     <p className="text-[10px] text-[#9A9A9A] font-bold">
-                      By {order.buyer_display_name} • Qty: {order.quantity} • ${order.total_price}
+                      By {order.buyer_display_name} • Qty: {order.quantity} • Rs.{order.total_price}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -588,7 +600,7 @@ export function MarketplaceView() {
                           onClick={async () => {
                             await marketplaceApi.updateOrderStatus(order.order_id, 'confirmed')
                             await loadMarketplace()
-                            pushToast('Order confirmed — buyer notified', 'success')
+                            onToast('Order confirmed — buyer notified', 'success')
                           }}
                           className="px-3 py-1.5 bg-[#4D5D53] text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
                         >
@@ -598,7 +610,7 @@ export function MarketplaceView() {
                           onClick={async () => {
                             await marketplaceApi.updateOrderStatus(order.order_id, 'cancelled')
                             await loadMarketplace()
-                            pushToast('Order cancelled', 'error')
+                            onToast('Order cancelled', 'error')
                           }}
                           className="px-3 py-1.5 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50"
                         >
@@ -612,7 +624,7 @@ export function MarketplaceView() {
                           onClick={async () => {
                             await marketplaceApi.updateOrderStatus(order.order_id, 'delivered')
                             await loadMarketplace()
-                            pushToast('Order marked as delivered', 'success')
+                            onToast('Order marked as delivered', 'success')
                           }}
                           className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
                         >
@@ -622,7 +634,7 @@ export function MarketplaceView() {
                           onClick={async () => {
                             await marketplaceApi.updateOrderStatus(order.order_id, 'cancelled')
                             await loadMarketplace()
-                            pushToast('Order cancelled', 'error')
+                            onToast('Order cancelled', 'error')
                           }}
                           className="px-3 py-1.5 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50"
                         >
@@ -665,7 +677,7 @@ export function MarketplaceView() {
                       {order.item_title || order.listing_title || order.item_name}
                     </h4>
                     <p className="text-[10px] text-[#9A9A9A] font-bold">
-                      {order.created_at || order.date} • ${order.total_price ?? order.price}
+                      {order.created_at || order.date} • Rs.{order.total_price ?? order.price}
                     </p>
                   </div>
                 </div>
@@ -687,7 +699,7 @@ export function MarketplaceView() {
                         e.stopPropagation()
                         await marketplaceApi.updateOrderStatus(order.order_id, 'cancelled')
                         await loadMarketplace()
-                        pushToast('Order cancelled', 'error')
+                        onToast('Order cancelled', 'error')
                       }}
                       className="px-3 py-1.5 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50"
                     >

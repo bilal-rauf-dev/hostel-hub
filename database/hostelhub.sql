@@ -184,6 +184,13 @@ CREATE TABLE post_likes (
     UNIQUE (post_id, user_id)
 );
 
+-- System Settings Table
+CREATE TABLE system_settings (
+    key         VARCHAR(100) PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  TIMESTAMP DEFAULT NOW()
+);
+
 -- Indexes on FK columns and requested search columns
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (email);
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at);
@@ -458,6 +465,15 @@ INSERT INTO post_likes (post_id, user_id) VALUES
 (8, 1), (8, 5),
 (9, 3), (9, 2),
 (10, 1), (10, 4);
+
+
+-- Default settings
+INSERT INTO system_settings (key, value) VALUES
+('registration_enabled', 'true'),
+('marketplace_enabled', 'true'),
+('maintenance_enabled', 'true'),
+('panic_button_enabled', 'true'),
+('maintenance_mode', 'false');
 
 -- Reset serial sequences after explicit sample IDs
 SELECT setval(pg_get_serial_sequence('users', 'user_id'), (SELECT MAX(user_id) FROM users));

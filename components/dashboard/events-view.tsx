@@ -17,19 +17,16 @@ import { createPortal } from 'react-dom'
 import { eventsApi } from '@/lib/api'
 import { isAdmin } from '@/lib/auth'
 
-export function EventsView() {
+interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => void }
+
+export function EventsView({ onToast }: Props) {
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('All')
-  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
-
-  const pushToast = (message: string, type: 'success' | 'error') => {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
-  }
-
+  
+  
   useEffect(() => {
     let mounted = true
     const load = async () => {
@@ -55,8 +52,8 @@ export function EventsView() {
       await eventsApi.rsvpEvent(event_id, newStatus)
       const res = await eventsApi.getEvents()
       if (res.data?.success) setEvents(res.data.data || [])
-      pushToast(newStatus === 'going' ? 'You\'re going!' : 'RSVP removed', 'success')
-    } catch (err) { pushToast('Failed to RSVP', 'error') }
+      onToast(newStatus === 'going' ? 'You\'re going!' : 'RSVP removed', 'success')
+    } catch (err) { onToast('Failed to RSVP', 'error') }
   }
 
   function CreateEventForm({ onDone, onCancel }: { onDone: (s:boolean)=>void, onCancel: ()=>void }){
@@ -71,13 +68,13 @@ export function EventsView() {
         const eventDate = date && time ? `${date}T${time}` : date || time || ''
         const res = await eventsApi.createEvent(title, '', location, eventDate)
         onDone(true)
-        pushToast('Event created', 'success')
+        onToast('Event created', 'success')
       } catch (e: any) {
         const errorMsg = e?.response?.status === 403 
           ? 'Only admins can create events'
           : e?.response?.data?.message || 'Failed to create event'
         onDone(false)
-        pushToast(errorMsg, 'error')
+        onToast(errorMsg, 'error')
       }
       finally { setSubmitting(false) }
     }
@@ -117,12 +114,7 @@ export function EventsView() {
         </motion.button>}
       </div>
 
-      {toast && (
-        <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-          {toast.message}
-        </div>
-      )}
-
+      
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
         {categories.map((cat, idx) => (
           <motion.button

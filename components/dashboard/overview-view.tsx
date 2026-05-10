@@ -144,10 +144,12 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
               </div>
 
               <div className="flex items-center gap-4 mb-4">
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.1, backgroundColor: '#E9EDC9' }}
+                  whileTap={{ scale: 0.9 }}
                   onClick={() => setQuantityValue(Math.max(1, quantityValue - 1))}
-                  className="px-4 py-2 bg-[#FAF9F6] rounded-lg border text-lg font-bold"
-                >−</button>
+                  className="px-4 py-2 bg-[#FAF9F6] rounded-lg border text-lg font-black transition-colors"
+                >−</motion.button>
                 <input
                   type="number"
                   min="1"
@@ -163,26 +165,32 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
                   }
                   className="flex-1 p-3 border rounded-lg text-center text-lg font-bold"
                 />
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.1, backgroundColor: '#E9EDC9' }}
+                  whileTap={{ scale: 0.9 }}
                   onClick={() => setQuantityValue(Math.min(parseInt(quantityModal.listing.quantity) || 99, quantityValue + 1))}
-                  className="px-4 py-2 bg-[#FAF9F6] rounded-lg border text-lg font-bold"
-                >+</button>
+                  className="px-4 py-2 bg-[#FAF9F6] rounded-lg border text-lg font-black transition-colors"
+                >+</motion.button>
               </div>
 
               <p className="text-sm text-[#9A9A9A] mb-1">Max available: {parseInt(quantityModal.listing.quantity) || 99}</p>
               <p className="text-lg font-black text-[#4D5D53] mb-6">
-                Total: ${(quantityValue * (quantityModal.listing.price || 0)).toFixed(2)}
+                Total: Rs.{(quantityValue * (quantityModal.listing.price || 0)).toFixed(2)}
               </p>
 
               <div className="flex justify-end gap-3">
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
                   onClick={() => setQuantityModal({ visible: false })}
-                  className="px-4 py-2 rounded-xl border"
-                >Cancel</button>
-                <button
+                  className="px-4 py-2 rounded-xl border font-bold text-sm hover:border-[#3D4D43] transition-colors duration-150"
+                >Cancel</motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.02, backgroundColor: '#3D4D43' }}
+                  whileTap={{ scale: 0.97 }}
                   onClick={handlePlaceOrder}
-                  className="px-4 py-2 bg-[#4D5D53] text-white rounded-xl font-bold"
-                >Confirm Order</button>
+                  className="px-4 py-2 bg-[#4D5D53] text-white rounded-xl font-bold text-sm shadow-lg shadow-[#4D5D53]/20"
+                >Confirm Order</motion.button>
               </div>
             </motion.div>
           </motion.div>
@@ -300,7 +308,7 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-black text-[#4D5D53] tracking-tighter">
-                      ${item.price?.toFixed?.(2) ?? item.price}
+                      Rs.{item.price?.toFixed?.(2) ?? item.price}
                     </p>
                     <span className="text-[9px] font-black uppercase tracking-widest text-[#D4A373] bg-[#FEFAE0] px-2 py-0.5 rounded-full">
                       Order

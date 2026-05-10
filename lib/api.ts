@@ -10,16 +10,33 @@ export const apiClient: AxiosInstance = axios.create({
 })
 
 // Request interceptor: attach access token
-apiClient.interceptors.request.use(
-  (config) => {
-    const accessToken = localStorage.getItem('hh_access_token')
-    if (accessToken) {
-      config.headers.Authorization = `Bearer ${accessToken}`
+// lib/api.ts
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (error.response?.status === 401 && !originalRequest.url?.includes('/auth/login') && !originalRequest._retry) {
+
+      try {
+      } catch (err) {
+        localStorage.removeItem('hh_access_token');
+        localStorage.removeItem('hh_refresh_token');
+        processQueue(err, null);
+        
+        if (typeof window !== 'undefined') {
+           window.location.href = '/';
+        }
+        return Promise.reject(err);
+      } finally {
+        isRefreshing = false;
+      }
     }
-    return config
-  },
-  (error) => Promise.reject(error)
-)
+
+    return Promise.reject(error);
+  }
+);
 
 // Response interceptor: handle 401 and refresh token
 let isRefreshing = false
@@ -76,10 +93,6 @@ apiClient.interceptors.response.use(
         localStorage.removeItem('hh_refresh_token')
         processQueue(err, null)
         
-        // Redirect to login
-        if (typeof window !== 'undefined') {
-          window.location.href = '/'
-        }
         return Promise.reject(err)
       } finally {
         isRefreshing = false
@@ -95,31 +108,31 @@ apiClient.interceptors.response.use(
 // ============================================
 export const authApi = {
   register: async (payload: { display_name: string; email: string; password: string; student_id: string; room_number?: string; contact_number?: string }) => {
-    return apiClient.post('/api/v1/auth/register', payload)
+    return apiClient.post('/api/v1/auth/register/', payload)
   },
 
   verifyOtp: async (email: string, otp_code: string) => {
-    return apiClient.post('/api/v1/auth/verify-otp', {
+    return apiClient.post('/api/v1/auth/verify-otp/', {
       email,
       otp_code,
     })
   },
 
   login: async (email: string, password: string) => {
-    return apiClient.post('/api/v1/auth/login', {
+    return apiClient.post('/api/v1/auth/login/', {
       email,
       password,
     })
   },
 
   refresh: async (refreshToken: string) => {
-    return apiClient.post('/api/v1/auth/refresh', {
+    return apiClient.post('/api/v1/auth/refresh/', {
       refresh_token: refreshToken,
     })
   },
 
   logout: async () => {
-    return apiClient.post('/api/v1/auth/logout')
+    return apiClient.post('/api/v1/auth/logout/')
   },
 }
 
@@ -223,6 +236,10 @@ export const maintenanceApi = {
     return apiClient.get('/api/v1/maintenance/tickets')
   },
 
+  getAllTickets: async () => {
+  return apiClient.get('/api/v1/maintenance/tickets')
+},
+
   updateTicketStatus: async (ticket_id: number, status: string) => {
     return apiClient.patch(`/api/v1/maintenance/tickets/${ticket_id}/status`, {
       status,
@@ -233,6 +250,10 @@ export const maintenanceApi = {
     return apiClient.patch(`/api/v1/maintenance/tickets/${ticket_id}/assign`, {
       assigned_to,
     })
+  },
+
+  deleteTicket: async (ticket_id: number) => {
+    return apiClient.delete(`/api/v1/maintenance/tickets/${ticket_id}`)
   },
 }
 
@@ -394,5 +415,17 @@ export const communityApi = {
   },
   toggleLike: async (post_id: number) => {
     return apiClient.post(`/api/v1/community/posts/${post_id}/like`)
+  },
+}
+
+// ============================================
+// SETTINGS API
+// ============================================
+export const settingsApi = {
+  getSettings: async () => {
+    return apiClient.get('/api/v1/settings/')
+  },
+  updateSettings: async (settings: Record<string, string>) => {
+    return apiClient.patch('/api/v1/settings/', { settings })
   },
 }
