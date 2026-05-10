@@ -7,28 +7,24 @@ import {
   Wrench, 
   CheckCircle2, 
   ShoppingCart, 
-  BarChart3
+  MessageSquare,
+  Bell
 } from 'lucide-react'
 
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { marketplaceApi, maintenanceApi, notificationsApi } from '@/lib/api'
+import { marketplaceApi, maintenanceApi, usersApi } from '@/lib/api'
 
 export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [recentListings, setRecentListings] = useState<any[]>([])
   const [recentTickets, setRecentTickets] = useState<any[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
+  const [summary, setSummary] = useState({ ticket_count: 0, order_count: 0, post_count: 0, unread_notifications: 0 })
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [quantityModal, setQuantityModal] = useState<{ visible: boolean; listing?: any }>({ visible: false })
   const [quantityValue, setQuantityValue] = useState(1)
-
-  const activeTicketCount = recentTickets.filter(
-    (ticket) => ticket.status !== 'resolved' && ticket.status !== 'closed'
-  ).length
-
   const pushToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
@@ -63,17 +59,17 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
         setLoading(true)
         setError(null)
 
-        const [listRes, ticketRes, notifRes] = await Promise.all([
+        const [listRes, ticketRes, summaryRes] = await Promise.all([
           marketplaceApi.getListings(),
           maintenanceApi.getTickets(),
-          notificationsApi.getNotifications(),
+          usersApi.getSummary(),
         ])
 
         if (!mounted) return
 
         if (listRes.data?.success) setRecentListings((listRes.data.data || []).slice(0, 4))
         if (ticketRes.data?.success) setRecentTickets((ticketRes.data.data || []).slice(0, 4))
-        if (notifRes.data?.success) setUnreadCount(notifRes.data.data?.unread_count || 0)
+        if (summaryRes.data?.success) setSummary(summaryRes.data.data)
       } catch (err: any) {
         setError(err?.message || 'Failed to load overview')
       } finally {
@@ -199,27 +195,7 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
       )}
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <motion.div 
-          initial={{ x: -20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#D4A373', scale: 1.01, transition: { duration: 0.05 } }}
-          className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-250 hover:shadow-xl hover:shadow-[#D4A373]/5"
-          onClick={() => onNavigate?.('Marketplace')}
-        >
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">Marketplace</p>
-            <h4 className="text-2xl font-black text-[#4D5D53]">{recentListings.length} New</h4>
-            <p className="text-[10px] items-center flex gap-1 text-emerald-600 font-bold mt-1">
-              {recentListings.length} total listings
-            </p>
-          </div>
-          <motion.div whileHover={{ x: 3, y: -3, scale: 1.1 }} className="p-4 bg-[#FEFAE0] rounded-2xl text-[#D4A373]">
-            <ShoppingCart className="h-6 w-6" />
-          </motion.div>
-        </motion.div>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <motion.div 
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
@@ -229,11 +205,8 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
           onClick={() => onNavigate?.('Tickets')}
         >
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">Maintenance</p>
-            <h4 className="text-2xl font-black text-[#4D5D53]">{activeTicketCount} Active</h4>
-            <p className="text-[10px] items-center flex gap-1 text-[#D4A373] font-bold mt-1">
-              {recentTickets.length} total tickets
-            </p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">My Tickets</p>
+            <h4 className="text-2xl font-black text-[#4D5D53]">{summary.ticket_count} Total</h4>
           </div>
           <motion.div whileHover={{ x: 3, y: -3, scale: 1.1 }} className="p-4 bg-orange-50 rounded-2xl text-orange-500">
             <Wrench className="h-6 w-6" />
@@ -246,15 +219,48 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#10B981', scale: 1.01, transition: { duration: 0.05 } }}
           className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-250 hover:shadow-xl hover:shadow-emerald-500/5"
+          onClick={() => onNavigate?.('Marketplace')}
+        >
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">My Orders</p>
+            <h4 className="text-2xl font-black text-[#4D5D53]">{summary.order_count} Placed</h4>
+          </div>
+          <motion.div whileHover={{ x: 3, y: -3, scale: 1.1 }} className="p-4 bg-emerald-50 rounded-2xl text-emerald-500">
+            <ShoppingCart className="h-6 w-6" />
+          </motion.div>
+        </motion.div>
+
+        <motion.div 
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#3B82F6', scale: 1.01, transition: { duration: 0.05 } }}
+          className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-250 hover:shadow-xl hover:shadow-blue-500/5"
           onClick={() => onNavigate?.('Community')}
         >
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">Community Poll</p>
-            <h4 className="text-2xl font-black text-[#4D5D53]">Vote Now</h4>
-            <p className="text-[10px] items-center flex gap-1 text-[#4D5D53] font-bold mt-1">Active polls in community</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">My Posts</p>
+            <h4 className="text-2xl font-black text-[#4D5D53]">{summary.post_count} Shared</h4>
           </div>
-          <motion.div whileHover={{ x: 3, y: -3, scale: 1.1 }} className="p-4 bg-emerald-50 rounded-2xl text-[#4D5D53]">
-            <BarChart3 className="h-6 w-6" />
+          <motion.div whileHover={{ x: 3, y: -3, scale: 1.1 }} className="p-4 bg-blue-50 rounded-2xl text-blue-500">
+            <MessageSquare className="h-6 w-6" />
+          </motion.div>
+        </motion.div>
+
+        <motion.div 
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          whileHover={{ backgroundColor: '#FAF9F6', borderColor: '#8B5CF6', scale: 1.01, transition: { duration: 0.05 } }}
+          className="bg-white p-6 rounded-3xl border border-[#EFEFE9] shadow-sm flex items-center justify-between group cursor-pointer transition-all duration-250 hover:shadow-xl hover:shadow-purple-500/5"
+          onClick={() => {}}
+        >
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">Notifications</p>
+            <h4 className="text-2xl font-black text-[#4D5D53]">{summary.unread_notifications} Unread</h4>
+          </div>
+          <motion.div whileHover={{ x: 3, y: -3, scale: 1.1 }} className="p-4 bg-purple-50 rounded-2xl text-purple-500">
+            <Bell className="h-6 w-6" />
           </motion.div>
         </motion.div>
       </div>

@@ -77,6 +77,18 @@ async def create_safety_alert(
                     (title, body, severity),
                 )
                 new_alert = await cur.fetchone()
+                
+                if new_alert:
+                    await cur.execute(
+                        """
+                        INSERT INTO notifications (user_id, title, body)
+                        SELECT user_id, %s, %s
+                        FROM users
+                        WHERE role = 'student'
+                        """,
+                        (f"🚨 Safety Alert: {title}", body)
+                    )
+                
                 await conn.commit()
 
         return json_response(True, new_alert, "Safety alert created")
@@ -112,3 +124,31 @@ async def toggle_safety_alert(
         return json_response(True, updated, "Alert toggled")
     except Exception as e:
         return json_response(False, None, f"Failed to toggle alert: {str(e)}")
+
+@router.delete("/{alert_id}")
+async def delete_safety_alert(
+    alert_id: int,
+    admin: dict = Depends(require_admin),
+    pool=Depends(get_db_pool),
+) -> dict:
+    """Delete a safety alert (admin only)."""
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    """
+                    DELETE FROM safety_alerts
+                    WHERE alert_id = %s
+                    RETURNING alert_id
+                    """,
+                    (alert_id,),
+                )
+                deleted = await cur.fetchone()
+                await conn.commit()
+
+        if not deleted:
+            return json_response(False, None, "Alert not found")
+
+        return json_response(True, deleted, "Alert deleted")
+    except Exception as e:
+        return json_response(False, None, f"Failed to delete alert: {str(e)}")

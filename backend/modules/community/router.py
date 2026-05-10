@@ -89,10 +89,21 @@ async def delete_post(
                     return json_response(False, None, "Post not found")
                 if post["user_id"] != user["user_id"] and user["role"] != "admin":
                     return json_response(False, None, "Not authorized")
+                
                 await cur.execute(
                     "DELETE FROM community_posts WHERE post_id = %s",
                     (post_id,),
                 )
+                
+                if post["user_id"] != user["user_id"] and user["role"] == "admin":
+                    await cur.execute(
+                        """
+                        INSERT INTO notifications (user_id, title, body)
+                        VALUES (%s, %s, %s)
+                        """,
+                        (post["user_id"], "Your post was removed", "Your post was removed by an admin.")
+                    )
+                
                 await conn.commit()
         return json_response(True, None, "Post deleted successfully")
     except Exception as e:
@@ -126,6 +137,29 @@ async def toggle_like(
                         (post_id, user["user_id"]),
                     )
                     action = "liked"
+                    
+                    # Notify post author
+                    await cur.execute(
+                        "SELECT user_id FROM community_posts WHERE post_id = %s",
+                        (post_id,)
+                    )
+                    post_author = await cur.fetchone()
+                    if post_author and post_author["user_id"] != user["user_id"]:
+                        await cur.execute(
+                            "SELECT display_name FROM users WHERE user_id = %s",
+                            (user["user_id"],)
+                        )
+                        liker = await cur.fetchone()
+                        liker_name = liker["display_name"] if liker else "Someone"
+                        
+                        await cur.execute(
+                            """
+                            INSERT INTO notifications (user_id, title, body)
+                            VALUES (%s, %s, %s)
+                            """,
+                            (post_author["user_id"], "Someone liked your post", f"{liker_name} liked your post")
+                        )
+
                 await conn.commit()
         return json_response(True, {"action": action}, f"Post {action} successfully")
     except Exception as e:

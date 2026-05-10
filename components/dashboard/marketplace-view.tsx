@@ -10,9 +10,11 @@ import {
   Star,
   Tag,
   ChevronRight,
-  ArrowUpRight
+  ArrowUpRight,
+  Inbox,
+  RefreshCw
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { marketplaceApi } from '@/lib/api'
@@ -53,34 +55,31 @@ function CreateListingForm({ onDone, onCancel }: { onDone: (success: boolean, me
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="text-sm font-black">Title</label>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full p-3 rounded-lg border" />
+        <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full p-3 rounded-xl border focus:border-[#D4A373] outline-none" placeholder="Item Name" required />
       </div>
       <div>
         <label className="text-sm font-black">Description</label>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full p-3 rounded-lg border" />
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full p-3 rounded-xl border focus:border-[#D4A373] outline-none" required />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <select value={category} onChange={(e) => setCategory(e.target.value)} className="p-3 rounded-lg border">
+        <select value={category} onChange={(e) => setCategory(e.target.value)} className="p-3 rounded-xl border focus:border-[#D4A373] outline-none" required>
           <option value="">Select category</option>
-          <option value="Food & Drinks">Food & Drinks</option>
-          <option value="Stationery">Stationery</option>
           <option value="Electronics">Electronics</option>
-          <option value="Clothing">Clothing</option>
           <option value="Books">Books</option>
-          <option value="Services">Services</option>
-          <option value="Transport">Transport</option>
+          <option value="Clothing">Clothing</option>
+          <option value="Food">Food</option>
           <option value="Other">Other</option>
         </select>
-        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Price" type="number" className="p-3 rounded-lg border" />
+        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Price (Rs)" type="number" min="0" className="p-3 rounded-xl border focus:border-[#D4A373] outline-none" required />
       </div>
       <div>
         <label className="text-sm font-black">Quantity</label>
-        <input value={quantity} onChange={(e) => setQuantity(e.target.value)} type="number" min="1" className="w-full p-3 rounded-lg border" />
+        <input value={quantity} onChange={(e) => setQuantity(e.target.value)} type="number" min="1" className="w-full p-3 rounded-xl border focus:border-[#D4A373] outline-none" required />
       </div>
-      {error && <div className="text-red-500">{error}</div>}
+      {error && <div className="text-red-500 text-sm">{error}</div>}
       <div className="flex justify-end gap-3">
-        <button type="button" onClick={() => { onCancel(); }} className="px-4 py-2 rounded-xl border">Cancel</button>
-        <button type="submit" disabled={loading} className="px-4 py-2 bg-[#4D5D53] text-white rounded-xl">{loading ? 'Creating...' : 'Create'}</button>
+        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="button" onClick={() => { onCancel(); }} className="px-4 py-2 rounded-xl border">Cancel</motion.button>
+        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={loading} className="px-4 py-2 bg-[#4D5D53] text-white rounded-xl disabled:opacity-50">{loading ? 'Creating...' : 'Create'}</motion.button>
       </div>
     </form>
   )
@@ -99,11 +98,18 @@ export function MarketplaceView({ onToast }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState('')
-    const [quantityModal, setQuantityModal] = useState<{ visible: boolean; listing?: any }>({ visible: false })
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [quantityModal, setQuantityModal] = useState<{ visible: boolean; listing?: any }>({ visible: false })
   const [quantityValue, setQuantityValue] = useState(1)
   const [orderDetailModal, setOrderDetailModal] = useState<{ visible: boolean; order?: any }>({ visible: false })
 
-  
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search)
+    }, 300)
+    return () => clearTimeout(handler)
+  }, [search])
+
   const handlePlaceOrder = async () => {
     if (!quantityModal.listing) return
     try {
@@ -114,7 +120,7 @@ export function MarketplaceView({ onToast }: Props) {
         setQuantityValue(1)
         await loadMarketplace()
       } else {
-      setQuantityModal({ visible: false })
+        setQuantityModal({ visible: false })
         onToast(res.data?.message || 'Failed to place order', 'error')
       }
     } catch (err: any) {
@@ -124,26 +130,46 @@ export function MarketplaceView({ onToast }: Props) {
     }
   }
 
-  const loadMarketplace = async () => {
-    const [listRes, ordersRes, receivedRes] = await Promise.all([
-      marketplaceApi.getListings(search, selectedCategory === 'All' ? undefined : selectedCategory),
-      marketplaceApi.getMyOrders(),
-      marketplaceApi.getReceivedOrders(),
-    ])
+  const [refreshing, setRefreshing] = useState(false)
 
-    if (listRes.data?.success) setListings(listRes.data.data || [])
-    if (ordersRes.data?.success) setOrders(ordersRes.data.data || [])
-    if (receivedRes.data?.success) setReceivedOrders(receivedRes.data.data || [])
+  const load = useCallback(async (targetView = view) => {
+    try {
+      const [listRes, ordersRes, receivedRes] = await Promise.all([
+        (targetView === 'Market' || targetView === 'Listings') ? marketplaceApi.getListings(debouncedSearch, selectedCategory === 'All' ? undefined : selectedCategory) : Promise.resolve({ data: { success: false } }),
+        (targetView === 'Orders') ? marketplaceApi.getMyOrders() : Promise.resolve({ data: { success: false } }),
+        (targetView === 'Listings') ? marketplaceApi.getReceivedOrders() : Promise.resolve({ data: { success: false } }),
+      ])
+
+      if (targetView === 'Market' || targetView === 'Listings') {
+        if (listRes.data?.success) setListings(listRes.data.data || [])
+      }
+      if (targetView === 'Orders') {
+        if (ordersRes.data?.success) setOrders(ordersRes.data.data || [])
+      }
+      if (targetView === 'Listings') {
+        if (receivedRes.data?.success) setReceivedOrders(receivedRes.data.data || [])
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load marketplace data')
+    }
+  }, [debouncedSearch, selectedCategory, view])
+
+  const loadMarketplace = load
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await load()
+    setRefreshing(false)
   }
 
   useEffect(() => {
     let mounted = true
-    const load = async () => {
+    const loadInit = async () => {
       try {
         setLoading(true)
         setError(null)
         const [listRes, ordersRes, receivedRes] = await Promise.all([
-          marketplaceApi.getListings(search, selectedCategory === 'All' ? undefined : selectedCategory),
+          marketplaceApi.getListings(debouncedSearch, selectedCategory === 'All' ? undefined : selectedCategory),
           marketplaceApi.getMyOrders(),
           marketplaceApi.getReceivedOrders(),
         ])
@@ -152,18 +178,16 @@ export function MarketplaceView({ onToast }: Props) {
         if (ordersRes.data?.success) setOrders(ordersRes.data.data || [])
         if (receivedRes.data?.success) setReceivedOrders(receivedRes.data.data || [])
       } catch (err: any) {
-        setError(err?.message || 'Failed to load marketplace')
+        if (mounted) setError(err?.message || 'Failed to load marketplace')
       } finally {
         if (mounted) setLoading(false)
       }
     }
-    load()
+    loadInit()
     return () => { mounted = false }
-  }, [selectedCategory, search])
+  }, [selectedCategory, debouncedSearch])
 
-  const categories = ['All', ...Array.from(new Set(listings.map(l => l.category).filter(Boolean)))]
-
-  const filteredProducts = selectedCategory === 'All' ? listings : listings.filter(p => p.category === selectedCategory)
+  const categories = ['All', 'Electronics', 'Books', 'Clothing', 'Food', 'Other']
 
   return (
     <motion.div 
@@ -174,25 +198,42 @@ export function MarketplaceView({ onToast }: Props) {
     >
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
         <h3 className="text-2xl font-black text-[#4D5D53] tracking-tight">Marketplace</h3>
-        <div className="flex bg-white p-1.5 rounded-2xl border border-[#F0F0EE] shadow-sm">
-          <button 
-  onClick={async () => { setView('Market'); await loadMarketplace() }}
-            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'Market' ? 'bg-[#4D5D53] text-white shadow-lg' : 'text-[#9A9A9A] hover:bg-[#FAF9F6]'}`}
+        <div className="flex items-center gap-3">
+          <div className="flex bg-white p-1.5 rounded-2xl border border-[#F0F0EE] shadow-sm">
+            <motion.button 
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={async () => { setView('Market'); await loadMarketplace('Market') }}
+              className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'Market' ? 'bg-[#4D5D53] text-white shadow-lg' : 'text-[#9A9A9A] hover:bg-[#FAF9F6]'}`}
+            >
+              Browse Market
+            </motion.button>
+            <motion.button 
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={async () => { setView('Orders'); await loadMarketplace('Orders') }}
+              className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'Orders' ? 'bg-[#4D5D53] text-white shadow-lg' : 'text-[#9A9A9A] hover:bg-[#FAF9F6]'}`}
+            >
+              My Orders
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={async () => { setView('Listings'); await loadMarketplace('Listings') }}
+              className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'Listings' ? 'bg-[#4D5D53] text-white shadow-lg' : 'text-[#9A9A9A] hover:bg-[#FAF9F6]'}`}
+            >
+              My Listings
+            </motion.button>
+          </div>
+          <motion.button
+            onClick={handleRefresh}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            disabled={refreshing}
+            className="p-2.5 bg-white border border-[#F0F0EE] rounded-xl text-[#79837C] hover:bg-[#FAF9F6] transition-all shadow-sm disabled:opacity-50"
           >
-            Browse Market
-          </button>
-          <button 
-  onClick={async () => { setView('Orders'); await loadMarketplace() }}
-            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'Orders' ? 'bg-[#4D5D53] text-white shadow-lg' : 'text-[#9A9A9A] hover:bg-[#FAF9F6]'}`}
-          >
-            My Orders
-          </button>
-          <button
-            onClick={async () => { setView('Listings'); await loadMarketplace() }}
-            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'Listings' ? 'bg-[#4D5D53] text-white shadow-lg' : 'text-[#9A9A9A] hover:bg-[#FAF9F6]'}`}
-          >
-            My Listings
-          </button>
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </motion.button>
         </div>
       </div>
 
@@ -219,19 +260,15 @@ export function MarketplaceView({ onToast }: Props) {
               animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
               transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-              className="relative bg-white p-6 rounded-2xl w-full max-w-lg mx-4 shadow-2xl z-10"
+              className="relative bg-white p-6 rounded-[2rem] w-full max-w-lg mx-4 shadow-2xl z-10"
             >
-              <h4 className="text-lg font-black mb-4">Create Listing</h4>
+              <h4 className="text-xl font-black mb-6 text-[#4D5D53]">Create Listing</h4>
               <CreateListingForm
                 onDone={async (success, message) => {
                   if (success) {
                     onToast(message || 'Listing created successfully', 'success')
                     setCreating(false)
-                    try {
-                      await loadMarketplace()
-                    } catch (err: any) {
-                      onToast(err?.message || 'Failed to refresh listings', 'error')
-                    }
+                    await loadMarketplace()
                   } else {
                     onToast(message || 'Failed to create listing', 'error')
                   }
@@ -266,10 +303,10 @@ export function MarketplaceView({ onToast }: Props) {
               animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
               transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-              className="relative bg-white p-6 rounded-2xl w-full max-w-sm mx-4 shadow-2xl z-10"
+              className="relative bg-white p-8 rounded-[2.5rem] w-full max-w-sm mx-4 shadow-2xl z-10"
             >
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-16 h-16 rounded-xl overflow-hidden relative shrink-0 bg-[#F4F4F2]">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden relative shrink-0 bg-[#F4F4F2]">
                   <Image
                     src={`https://picsum.photos/seed/${quantityModal.listing.listing_id}/400/300`}
                     alt={quantityModal.listing.title}
@@ -280,7 +317,7 @@ export function MarketplaceView({ onToast }: Props) {
                   />
                 </div>
                 <div>
-                  <h4 className="text-lg font-black">How many do you want?</h4>
+                  <h4 className="text-lg font-black text-[#4D5D53]">How many do you want?</h4>
                   <p className="text-sm text-[#9A9A9A]">{quantityModal.listing.title}</p>
                 </div>
               </div>
@@ -289,31 +326,34 @@ export function MarketplaceView({ onToast }: Props) {
                   whileHover={{ scale: 1.1, backgroundColor: '#E9EDC9' }}
                   whileTap={{ scale: 0.9 }}
                   onClick={() => setQuantityValue(Math.max(1, quantityValue - 1))}
-                  className="px-4 py-2 bg-[#FAF9F6] rounded-lg border text-lg font-black transition-colors"
+                  className="px-4 py-2 bg-[#FAF9F6] rounded-xl border text-lg font-black transition-colors"
                 >-</motion.button>
-                <input type="number" min="1" max={parseInt(quantityModal?.listing?.quantity) || 99} value={quantityValue.toString()} onChange={(e) => setQuantityValue(Math.min(parseInt(quantityModal?.listing?.quantity) || 99, Math.max(1, parseInt(e.target.value) || 1)))} className="flex-1 p-3 border rounded-lg text-center text-lg font-bold" />
+                <input type="number" min="1" max={parseInt(quantityModal?.listing?.quantity) || 99} value={quantityValue.toString()} onChange={(e) => setQuantityValue(Math.min(parseInt(quantityModal?.listing?.quantity) || 99, Math.max(1, parseInt(e.target.value) || 1)))} className="flex-1 p-3 border rounded-xl text-center text-lg font-bold outline-none focus:border-[#D4A373]" />
                 <motion.button
                   whileHover={{ scale: 1.1, backgroundColor: '#E9EDC9' }}
                   whileTap={{ scale: 0.9 }}
                   onClick={() => setQuantityValue(Math.min(parseInt(quantityModal?.listing?.quantity) || 99, quantityValue + 1))}
-                  className="px-4 py-2 bg-[#FAF9F6] rounded-lg border text-lg font-black transition-colors"
+                  className="px-4 py-2 bg-[#FAF9F6] rounded-xl border text-lg font-black transition-colors"
                 >+</motion.button>
               </div>
-              <p className="text-sm text-[#9A9A9A] mb-4">Max available: {parseInt(quantityModal?.listing?.quantity) || 99}</p>
-              <p className="text-lg font-black text-[#4D5D53] mb-6">Total: Rs.{(quantityValue * (quantityModal.listing.price || 0)).toFixed(2)}</p>
+              <p className="text-sm text-[#9A9A9A] mb-4 text-center">Max available: {parseInt(quantityModal?.listing?.quantity) || 99}</p>
+              <div className="bg-[#FAF9F6] p-4 rounded-2xl mb-6">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A] mb-1">Total</p>
+                <p className="text-2xl font-black text-[#4D5D53]">Rs.{(quantityValue * (quantityModal.listing.price || 0)).toFixed(2)}</p>
+              </div>
               <div className="flex justify-end gap-3">
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setQuantityModal({ visible: false })}
-                  className="px-4 py-2 rounded-xl border font-bold text-sm hover:border-[#3D4D43] transition-colors duration-150"
+                  className="flex-1 py-3 rounded-2xl border font-bold text-sm hover:bg-[#FAF9F6] transition-colors"
                 >Cancel</motion.button>
                 <motion.button
                   whileHover={{ scale: 1.02, backgroundColor: '#3D4D43' }}
                   whileTap={{ scale: 0.97 }}
                   onClick={handlePlaceOrder}
-                  className="px-4 py-2 bg-[#4D5D53] text-white rounded-xl font-bold text-sm shadow-lg shadow-[#4D5D53]/20"
-                >Confirm Order</motion.button>
+                  className="flex-1 py-3 bg-[#4D5D53] text-white rounded-2xl font-bold text-sm shadow-lg shadow-[#4D5D53]/20"
+                >Confirm</motion.button>
               </div>
             </motion.div>
           </motion.div>
@@ -343,41 +383,41 @@ export function MarketplaceView({ onToast }: Props) {
               animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: 20, scale: 0.95, filter: 'blur(10px)' }}
               transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-              className="relative bg-white p-6 rounded-2xl w-full max-w-lg mx-4 shadow-2xl z-10"
+              className="relative bg-white p-8 rounded-[3rem] w-full max-w-lg mx-4 shadow-2xl z-10"
             >
-              <h4 className="text-lg font-black mb-6">Order Details</h4>
+              <h4 className="text-2xl font-black mb-8 text-[#4D5D53]">Order Details</h4>
               <div className="space-y-4">
-                <div className="flex justify-between py-3 border-b">
-                  <span className="text-sm text-[#9A9A9A]">Item</span>
-                  <span className="font-bold">{orderDetailModal.order.item_title || orderDetailModal.order.listing_title || 'N/A'}</span>
+                <div className="flex justify-between py-4 border-b border-[#F0F0EE]">
+                  <span className="text-sm font-bold text-[#9A9A9A]">Item</span>
+                  <span className="font-black text-[#4D5D53]">{orderDetailModal.order.item_title || orderDetailModal.order.listing_title || 'N/A'}</span>
                 </div>
-                <div className="flex justify-between py-3 border-b">
-                  <span className="text-sm text-[#9A9A9A]">Quantity</span>
-                  <span className="font-bold">{orderDetailModal.order.quantity || orderDetailModal.order.qty || 'N/A'}</span>
+                <div className="flex justify-between py-4 border-b border-[#F0F0EE]">
+                  <span className="text-sm font-bold text-[#9A9A9A]">Quantity</span>
+                  <span className="font-black text-[#4D5D53]">{orderDetailModal.order.quantity || orderDetailModal.order.qty || 'N/A'}</span>
                 </div>
-                <div className="flex justify-between py-3 border-b">
-                  <span className="text-sm text-[#9A9A9A]">Total Price</span>
-                  <span className="font-bold">Rs.{orderDetailModal.order.total_price || orderDetailModal.order.price || '0.00'}</span>
+                <div className="flex justify-between py-4 border-b border-[#F0F0EE]">
+                  <span className="text-sm font-bold text-[#9A9A9A]">Total Price</span>
+                  <span className="font-black text-[#D4A373]">Rs.{orderDetailModal.order.total_price || orderDetailModal.order.price || '0.00'}</span>
                 </div>
-                <div className="flex justify-between py-3 border-b">
-                  <span className="text-sm text-[#9A9A9A]">Seller</span>
-                  <span className="font-bold">{orderDetailModal.order.seller_display_name || 'N/A'}</span>
+                <div className="flex justify-between py-4 border-b border-[#F0F0EE]">
+                  <span className="text-sm font-bold text-[#9A9A9A]">Seller</span>
+                  <span className="font-black text-[#4D5D53]">{orderDetailModal.order.seller_display_name || 'N/A'}</span>
                 </div>
-                <div className="flex justify-between py-3 border-b">
-                  <span className="text-sm text-[#9A9A9A]">Status</span>
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-black ${
+                <div className="flex justify-between py-4 border-b border-[#F0F0EE]">
+                  <span className="text-sm font-bold text-[#9A9A9A]">Status</span>
+                  <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${
                     orderDetailModal.order.status === 'fulfilled' || orderDetailModal.order.status === 'delivered' || orderDetailModal.order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-600' 
                     : orderDetailModal.order.status === 'cancelled' || orderDetailModal.order.status === 'Cancelled' ? 'bg-red-50 text-red-500' 
                     : 'bg-blue-50 text-blue-600'
                   }`}>{orderDetailModal.order.status || 'Pending'}</span>
                 </div>
-                <div className="flex justify-between py-3">
-                  <span className="text-sm text-[#9A9A9A]">Order Date</span>
-                  <span className="font-bold">{orderDetailModal.order.created_at || orderDetailModal.order.date || 'N/A'}</span>
+                <div className="flex justify-between py-4">
+                  <span className="text-sm font-bold text-[#9A9A9A]">Order Date</span>
+                  <span className="font-black text-[#4D5D53]">{orderDetailModal.order.created_at ? new Date(orderDetailModal.order.created_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <button onClick={() => setOrderDetailModal({ visible: false })} className="px-4 py-2 rounded-xl border">Close</button>
+              <div className="flex justify-end gap-3 mt-8">
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => setOrderDetailModal({ visible: false })} className="px-6 py-3 rounded-2xl border font-bold text-sm hover:bg-[#FAF9F6]">Close</motion.button>
               </div>
             </motion.div>
           </motion.div>
@@ -439,7 +479,7 @@ export function MarketplaceView({ onToast }: Props) {
       {/* Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <AnimatePresence mode="popLayout">
-          {filteredProducts.map((product, idx) => (
+          {listings.map((product, idx) => (
             <motion.div
               layout
               key={product.listing_id}
@@ -515,16 +555,20 @@ export function MarketplaceView({ onToast }: Props) {
         </AnimatePresence>
       </div>
 
-      {filteredProducts.length === 0 && (
-        <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-20 h-20 bg-[#F4F4F2] rounded-[2rem] flex items-center justify-center text-[#BDBDBD]">
-            <ShoppingBag className="h-10 w-10" />
+      {listings.length === 0 && !loading && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="py-20 flex flex-col items-center justify-center text-center space-y-4 bg-white rounded-[3rem] border border-[#F0F0EE] shadow-sm"
+        >
+          <div className="w-24 h-24 bg-[#F4F4F2] rounded-[2.5rem] flex items-center justify-center text-[#D4A373]">
+            <ShoppingBag className="h-10 w-10 opacity-50" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-[#4D5D53]">No items found</h3>
+            <h3 className="text-xl font-black text-[#4D5D53] tracking-tighter">No items found</h3>
             <p className="text-sm text-[#9A9A9A]">Try another category or search term.</p>
           </div>
-        </div>
+        </motion.div>
       )}
         </motion.div>
       ) : view === 'Listings' ? (
@@ -536,10 +580,22 @@ export function MarketplaceView({ onToast }: Props) {
           className="space-y-6"
         >
           {listings.filter(l => l.seller_id === currentUser?.user_id).length === 0 ? (
-            <div className="p-6 text-sm text-[#9A9A9A]">You have no active listings.</div>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="py-20 flex flex-col items-center justify-center text-center space-y-4 bg-white rounded-[3rem] border border-[#F0F0EE] shadow-sm"
+            >
+              <div className="w-24 h-24 bg-[#FAF9F6] rounded-[2.5rem] flex items-center justify-center text-[#D4A373]">
+                 <Tag className="h-10 w-10 opacity-50" />
+              </div>
+              <div>
+                 <h3 className="text-xl font-black text-[#4D5D53] tracking-tighter">No active listings</h3>
+                 <p className="text-sm text-[#9A9A9A]">You haven't posted anything for sale yet.</p>
+              </div>
+            </motion.div>
           ) : (
             listings.filter(l => l.seller_id === currentUser?.user_id).map((listing, idx) => (
-              <div key={listing.listing_id || idx} className="bg-white p-6 rounded-[2.5rem] border border-[#F0F0EE] shadow-sm flex items-center justify-between gap-6">
+              <motion.div whileHover={{ scale: 1.01 }} key={listing.listing_id} className="bg-white p-6 rounded-[2.5rem] border border-[#F0F0EE] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6 transition-all hover:border-[#D4A373]/50">
                 <div className="flex items-center gap-5">
                   <div className="w-16 h-16 rounded-2xl overflow-hidden relative shrink-0 bg-[#F4F4F2]">
                     <Image
@@ -552,16 +608,16 @@ export function MarketplaceView({ onToast }: Props) {
                   </div>
                   <div>
                     <span className="text-[10px] font-black text-[#D4A373] uppercase tracking-widest">{listing.category}</span>
-                    <h4 className="font-bold text-[#4D5D53]">{listing.title}</h4>
-                    <p className="text-[10px] text-[#9A9A9A] font-bold">Rs.{listing.price} • {listing.quantity} remaining</p>
+                    <h4 className="font-bold text-[#4D5D53] text-lg">{listing.title}</h4>
+                    <p className="text-xs text-[#9A9A9A] font-bold">Rs.{listing.price} • {listing.quantity} remaining</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600">
+                <div className="text-left sm:text-right">
+                  <div className="px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 inline-block">
                     {listing.status}
                   </div>
                 </div>
-              </div>
+              </motion.div>
             ))
           )}
           
@@ -570,23 +626,23 @@ export function MarketplaceView({ onToast }: Props) {
               Received Orders
             </h4>
             {receivedOrders.length === 0 ? (
-              <div className="p-6 text-sm text-[#9A9A9A]">No orders received yet.</div>
+              <div className="p-6 text-sm text-[#9A9A9A] bg-white rounded-[2rem] border border-[#F0F0EE] text-center italic shadow-sm">No orders received yet.</div>
             ) : (
               receivedOrders.map((order, idx) => (
-                <div key={order.order_id || idx}
-                  className="bg-white p-5 rounded-3xl border border-[#F0F0EE] shadow-sm flex items-center justify-between gap-4 mb-3"
+                <motion.div whileHover={{ scale: 1.01 }} key={order.order_id}
+                  className="bg-white p-5 rounded-3xl border border-[#F0F0EE] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3 transition-all hover:border-[#D4A373]/50"
                 >
                   <div>
                     <span className="text-[10px] font-black text-[#D4A373] uppercase tracking-widest">
                       Order #{order.order_id}
                     </span>
-                    <h4 className="font-bold text-[#4D5D53]">{order.item_title}</h4>
-                    <p className="text-[10px] text-[#9A9A9A] font-bold">
+                    <h4 className="font-bold text-[#4D5D53] text-lg">{order.item_title}</h4>
+                    <p className="text-xs text-[#9A9A9A] font-bold">
                       By {order.buyer_display_name} • Qty: {order.quantity} • Rs.{order.total_price}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
                       order.status === 'fulfilled' || order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600'
                       : order.status === 'confirmed' ? 'bg-blue-50 text-blue-600'
                       : order.status === 'cancelled' ? 'bg-red-50 text-red-500'
@@ -596,54 +652,62 @@ export function MarketplaceView({ onToast }: Props) {
                     </span>
                     {order.status === 'pending' && (
                       <>
-                        <button
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
                           onClick={async () => {
                             await marketplaceApi.updateOrderStatus(order.order_id, 'confirmed')
                             await loadMarketplace()
                             onToast('Order confirmed — buyer notified', 'success')
                           }}
-                          className="px-3 py-1.5 bg-[#4D5D53] text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                          className="px-4 py-2 bg-[#4D5D53] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#3D4D43] transition-colors"
                         >
                           Confirm
-                        </button>
-                        <button
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
                           onClick={async () => {
                             await marketplaceApi.updateOrderStatus(order.order_id, 'cancelled')
                             await loadMarketplace()
                             onToast('Order cancelled', 'error')
                           }}
-                          className="px-3 py-1.5 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50"
+                          className="px-4 py-2 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition-colors"
                         >
                           Cancel
-                        </button>
+                        </motion.button>
                       </>
                     )}
                     {order.status === 'confirmed' && (
                       <>
-                        <button
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
                           onClick={async () => {
                             await marketplaceApi.updateOrderStatus(order.order_id, 'delivered')
                             await loadMarketplace()
                             onToast('Order marked as delivered', 'success')
                           }}
-                          className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                          className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-colors"
                         >
                           Deliver
-                        </button>
-                        <button
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
                           onClick={async () => {
                             await marketplaceApi.updateOrderStatus(order.order_id, 'cancelled')
                             await loadMarketplace()
                             onToast('Order cancelled', 'error')
                           }}
-                          className="px-3 py-1.5 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50"
+                          className="px-4 py-2 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition-colors"
                         >
                           Cancel
-                        </button>
+                        </motion.button>
                       </>
                     )}
                   </div>
-                </div>
+                </motion.div>
               ))
             )}
           </div>
@@ -657,33 +721,46 @@ export function MarketplaceView({ onToast }: Props) {
           className="space-y-6"
         >
           {orders.length === 0 ? (
-            <div className="p-6 text-sm text-[#9A9A9A]">No orders yet.</div>
+            <motion.div 
+               initial={{ opacity: 0, scale: 0.95 }}
+               animate={{ opacity: 1, scale: 1 }}
+               className="py-20 flex flex-col items-center justify-center text-center space-y-4 bg-white rounded-[3rem] border border-[#F0F0EE] shadow-sm"
+             >
+               <div className="w-24 h-24 bg-[#FAF9F6] rounded-[2.5rem] flex items-center justify-center text-[#D4A373]">
+                  <Inbox className="h-10 w-10 opacity-50" />
+               </div>
+               <div>
+                  <h3 className="text-xl font-black text-[#4D5D53] tracking-tighter">No orders found</h3>
+                  <p className="text-sm text-[#9A9A9A]">You haven't placed any orders yet.</p>
+               </div>
+             </motion.div>
           ) : (
             orders.map((order, idx) => (
-              <div
-                key={order.order_id || idx}
+              <motion.div
+                whileHover={{ scale: 1.01 }}
+                key={order.order_id}
                 onClick={() => setOrderDetailModal({ visible: true, order })}
-                className="bg-white p-6 rounded-[2.5rem] border border-[#F0F0EE] shadow-sm flex items-center justify-between group hover:shadow-md transition-all cursor-pointer"
+                className="bg-white p-6 rounded-[2.5rem] border border-[#F0F0EE] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between group hover:shadow-md hover:border-[#D4A373]/50 transition-all cursor-pointer gap-4"
               >
                 <div className="flex items-center gap-6">
-                  <div className="w-16 h-16 bg-[#FAF9F6] rounded-2xl flex items-center justify-center text-[#D4A373] group-hover:rotate-6 transition-all">
+                  <div className="w-16 h-16 bg-[#FAF9F6] rounded-2xl flex items-center justify-center text-[#D4A373] group-hover:rotate-6 transition-all shrink-0">
                     <ShoppingBag className="h-8 w-8" />
                   </div>
                   <div>
                     <span className="text-[10px] font-black text-[#D4A373] uppercase tracking-widest">
-                      {order.order_number || order.order_id}
+                      Order #{order.order_id}
                     </span>
-                    <h4 className="font-bold text-[#4D5D53] tracking-tight">
+                    <h4 className="font-bold text-[#4D5D53] tracking-tight text-lg">
                       {order.item_title || order.listing_title || order.item_name}
                     </h4>
-                    <p className="text-[10px] text-[#9A9A9A] font-bold">
-                      {order.created_at || order.date} • Rs.{order.total_price ?? order.price}
+                    <p className="text-xs text-[#9A9A9A] font-bold">
+                      {new Date(order.created_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })} • Rs.{order.total_price ?? order.price}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-8">
-                  <div className="text-right hidden sm:block">
-                    <div className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest ${
+                <div className="flex items-center gap-8 self-end sm:self-auto">
+                  <div className="text-right">
+                    <div className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
                       order.status === 'fulfilled' || order.status === 'delivered'
                         ? 'text-emerald-500 bg-emerald-50'
                         : order.status === 'cancelled'
@@ -694,21 +771,23 @@ export function MarketplaceView({ onToast }: Props) {
                     </div>
                   </div>
                   {(order.status === 'pending' || order.status === 'confirmed') && (
-                    <button
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                       onClick={async (e) => {
                         e.stopPropagation()
                         await marketplaceApi.updateOrderStatus(order.order_id, 'cancelled')
                         await loadMarketplace()
                         onToast('Order cancelled', 'error')
                       }}
-                      className="px-3 py-1.5 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50"
+                      className="px-4 py-2 border border-red-500 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition-colors"
                     >
                       Cancel
-                    </button>
+                    </motion.button>
                   )}
                   <ArrowUpRight className="h-5 w-5 text-[#BDBDBD] group-hover:text-[#D4A373] group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
                 </div>
-              </div>
+              </motion.div>
             ))
           )}
         </motion.div>

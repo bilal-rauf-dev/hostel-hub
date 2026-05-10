@@ -8,12 +8,12 @@ import {
   MoreVertical,
   CheckCircle2,
   Clock,
-  AlertCircle,
   ArrowUpRight,
-  MessageSquare,
   Trash2,
+  Inbox,
+  RefreshCw
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { maintenanceApi, usersApi } from "@/lib/api";
 
@@ -21,14 +21,41 @@ interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => 
 
 export function StaffTicketsView({ onToast }: Props) {
   const [filter, setFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [assignMenuId, setAssignMenuId] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   
-  
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await maintenanceApi.getAllTickets();
+      if (res.data?.success) setTickets(res.data.data || []);
+      else setError(res.data?.message || "Failed to load");
+
+      const usersRes = await usersApi.getAllUsers();
+      if (usersRes.data?.success) {
+        setAdminUsers(
+          (usersRes.data.data || []).filter((u: any) => u.role === "admin"),
+        );
+      }
+    } catch (e: any) {
+      setError(e?.message || "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -42,32 +69,8 @@ export function StaffTicketsView({ onToast }: Props) {
   }, []);
 
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        setLoading(true);
-        const res = await maintenanceApi.getAllTickets();
-        if (!mounted) return;
-        if (res.data?.success) setTickets(res.data.data || []);
-        else setError(res.data?.message || "Failed to load");
-
-        const usersRes = await usersApi.getAllUsers();
-        if (usersRes.data?.success) {
-          setAdminUsers(
-            (usersRes.data.data || []).filter((u: any) => u.role === "admin"),
-          );
-        }
-      } catch (e: any) {
-        setError(e?.message || "Network error");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
     load();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  }, [load]);
 
   const updateStatus = async (ticket_id: number, status: string) => {
     try {
@@ -77,10 +80,11 @@ export function StaffTicketsView({ onToast }: Props) {
           prev.map((t) => (t.ticket_id === ticket_id ? { ...t, status } : t)),
         );
       } else {
-        alert(res.data?.message || "Failed to update status");
+        onToast(res.data?.message || "Failed to update status", "error");
       }
     } catch (e) {
       console.error(e);
+      onToast("Network error", "error");
     }
   };
 
@@ -94,8 +98,28 @@ export function StaffTicketsView({ onToast }: Props) {
       );
     } catch (e) {
       console.error(e);
+      onToast("Network error", "error");
     }
   };
+
+  const filteredTickets = tickets.filter((t) => {
+    const matchesSearch = 
+      (t.description?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (t.category?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (t.room_number?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (t.student_name?.toLowerCase() || '').includes(searchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (filter === "All") return true;
+    const map: Record<string, string> = {
+      Pending: "submitted",
+      "In Progress": "in_progress",
+      Resolved: "resolved",
+      Closed: "closed",
+    };
+    return t.status === map[filter];
+  });
 
   return (
     <motion.div
@@ -103,7 +127,7 @@ export function StaffTicketsView({ onToast }: Props) {
       animate={{ opacity: 1, y: 0 }}
       className="space-y-10"
     >
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h3 className="text-3xl font-black text-[#4D5D53] tracking-tighter">
             Support Tickets
@@ -114,27 +138,42 @@ export function StaffTicketsView({ onToast }: Props) {
         </div>
 
         <div className="flex items-center gap-3">
+          <motion.button
+            onClick={handleRefresh}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            disabled={refreshing}
+            className="p-2.5 bg-white border border-[#F0F0EE] rounded-xl text-[#79837C] hover:bg-[#FAF9F6] transition-all shadow-sm disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </motion.button>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#BDBDBD]" />
             <input
               type="text"
               placeholder="Search tickets..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 pr-4 py-2.5 bg-white border border-[#F0F0EE] rounded-xl text-xs focus:border-[#D4A373] outline-none w-64 shadow-sm"
             />
           </div>
-          <button className="p-2.5 bg-white border border-[#F0F0EE] rounded-xl text-[#79837C] hover:bg-[#FAF9F6] transition-all">
+          <motion.button 
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="p-2.5 bg-white border border-[#F0F0EE] rounded-xl text-[#79837C] hover:bg-[#FAF9F6] transition-all"
+          >
             <Filter className="h-4 w-4" />
-          </button>
+          </motion.button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-4 border-b border-[#F0F0EE] pb-2">
-        {["All", "Pending", "In Progress", "Resolved"].map((tab) => (
+      <div className="flex gap-4 border-b border-[#F0F0EE] pb-2 overflow-x-auto custom-scrollbar">
+        {["All", "Pending", "In Progress", "Resolved", "Closed"].map((tab) => (
           <button
             key={tab}
             onClick={() => setFilter(tab)}
-            className={`px-4 py-2 text-xs font-black uppercase tracking-widest transition-all relative ${filter === tab ? "text-[#4D5D53]" : "text-[#BDBDBD] hover:text-[#79837C]"}`}
+            className={`px-4 py-2 text-xs font-black uppercase tracking-widest transition-all relative whitespace-nowrap ${filter === tab ? "text-[#4D5D53]" : "text-[#BDBDBD] hover:text-[#79837C]"}`}
           >
             {tab}
             {filter === tab && (
@@ -150,23 +189,25 @@ export function StaffTicketsView({ onToast }: Props) {
       {/* Tickets List */}
       <div className="grid grid-cols-1 gap-4">
         {loading ? (
-          <div className="p-6">Loading tickets...</div>
+          <div className="p-6 text-sm text-[#9A9A9A] text-center py-20">Loading tickets...</div>
         ) : error ? (
-          <div className="p-6 text-red-500">Error: {error}</div>
+          <div className="p-6 text-red-500 text-center py-20">Error: {error}</div>
+        ) : filteredTickets.length === 0 ? (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center py-20 space-y-4 bg-white border border-[#F0F0EE] rounded-[3rem] shadow-sm"
+          >
+             <div className="w-24 h-24 bg-[#FAF9F6] rounded-full flex items-center justify-center text-[#D4A373]">
+                <Inbox className="h-10 w-10 opacity-50" />
+             </div>
+             <p className="text-lg font-black text-[#4D5D53] tracking-tighter">No tickets found</p>
+             <p className="text-sm text-[#9A9A9A]">Try adjusting your search or filters.</p>
+          </motion.div>
         ) : (
-          tickets
-            .filter((t) => {
-              if (filter === "All") return true;
-              const map: Record<string, string> = {
-                Pending: "submitted",
-                "In Progress": "in_progress",
-                Resolved: "resolved",
-              };
-              return t.status === map[filter];
-            })
-            .map((ticket, idx) => (
+          filteredTickets.map((ticket, idx) => (
               <motion.div
-                key={ticket.ticket_id || ticket.id || idx}
+                key={ticket.ticket_id}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: idx * 0.05 }}
@@ -187,18 +228,18 @@ export function StaffTicketsView({ onToast }: Props) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[10px] font-black text-[#D4A373] uppercase tracking-widest">
-                      {ticket.ticket_number || ticket.ticket_id}
+                      Ticket #{ticket.ticket_id}
                     </span>
                     <span className="text-[10px] font-black text-[#BDBDBD] uppercase tracking-widest">
                       • {ticket.category}
                     </span>
                   </div>
                   <h4 className="text-lg font-black text-[#4D5D53] truncate">
-                    {ticket.description || ticket.issue}
+                    {ticket.description}
                   </h4>
                   <p className="text-xs text-[#9A9A9A] font-bold mt-1">
-                    Requested by {ticket.student_name || ticket.user} in{" "}
-                    {ticket.room || ticket.room_number}
+                    Requested by {ticket.student_name} in{" "}
+                    {ticket.room_number}
                   </p>
                 </div>
 
@@ -224,7 +265,7 @@ export function StaffTicketsView({ onToast }: Props) {
                       Created
                     </p>
                     <span className="text-xs font-black text-[#4D5D53]">
-                      {ticket.created_at || ticket.time}
+                      {new Date(ticket.created_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short' })}
                     </span>
                   </div>
                 </div>
@@ -252,7 +293,9 @@ export function StaffTicketsView({ onToast }: Props) {
                   </div>
 
                   <div className="flex items-center gap-1">
-                    <button
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
                       onClick={() => {
                         const nextMap: Record<string, string> = {
                           submitted: "assigned",
@@ -262,37 +305,40 @@ export function StaffTicketsView({ onToast }: Props) {
                         };
                         const next = nextMap[ticket.status];
                         if (next)
-                          updateStatus(ticket.ticket_id || ticket.id, next);
+                          updateStatus(ticket.ticket_id, next);
                       }}
-                      className="p-3 text-[#BDBDBD] hover:text-[#D4A373] hover:bg-[#FEFAE0] rounded-xl transition-all"
+                      className="p-3 text-[#BDBDBD] hover:text-[#D4A373] hover:bg-[#FEFAE0] rounded-xl transition-all disabled:opacity-50"
                       disabled={ticket.status === "closed"}
+                      title="Advance Status"
                     >
                       <ArrowUpRight className="h-4 w-4" />
-                    </button>
+                    </motion.button>
                     <div
                       className="relative"
                       data-menu
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <button
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
                         onClick={() => {
                           setOpenMenuId(
-                            openMenuId === (ticket.ticket_id || ticket.id)
+                            openMenuId === ticket.ticket_id
                               ? null
-                              : ticket.ticket_id || ticket.id,
+                              : ticket.ticket_id,
                           );
                           setAssignMenuId(null);
                         }}
                         className="p-3 text-[#BDBDBD] hover:text-[#4D5D53] hover:bg-[#FAF9F6] rounded-xl transition-all"
                       >
                         <MoreVertical className="h-4 w-4" />
-                      </button>
+                      </motion.button>
 
-                      {openMenuId === (ticket.ticket_id || ticket.id) && (
+                      {openMenuId === ticket.ticket_id && (
                         <div className="absolute right-0 top-12 z-50 bg-white border border-[#F0F0EE] rounded-2xl shadow-xl overflow-hidden w-44">
                           <button
                             onClick={() => {
-                              setAssignMenuId(ticket.ticket_id || ticket.id);
+                              setAssignMenuId(ticket.ticket_id);
                               setOpenMenuId(null);
                             }}
                             className="w-full text-left px-4 py-3 text-xs font-black uppercase tracking-widest text-[#4D5D53] hover:bg-[#FAF9F6] transition-colors flex items-center gap-2"
@@ -305,14 +351,12 @@ export function StaffTicketsView({ onToast }: Props) {
                               setOpenMenuId(null);
                               try {
                                 const res = await maintenanceApi.deleteTicket(
-                                  ticket.ticket_id || ticket.id,
+                                  ticket.ticket_id,
                                 );
                                 if (res.data?.success) {
                                   setTickets((prev) =>
                                     prev.filter(
-                                      (t) =>
-                                        (t.ticket_id || t.id) !==
-                                        (ticket.ticket_id || ticket.id),
+                                      (t) => t.ticket_id !== ticket.ticket_id,
                                     ),
                                   );
                                   onToast("Ticket deleted", "success");
@@ -336,7 +380,7 @@ export function StaffTicketsView({ onToast }: Props) {
                         </div>
                       )}
 
-                      {assignMenuId === (ticket.ticket_id || ticket.id) &&
+                      {assignMenuId === ticket.ticket_id &&
                         createPortal(
                           <div
                             className="fixed inset-0 z-[9999] flex items-center justify-center"
@@ -348,20 +392,20 @@ export function StaffTicketsView({ onToast }: Props) {
                               onClick={(e) => e.stopPropagation()}
                             >
                               <h4 className="text-sm font-black text-[#4D5D53] uppercase tracking-widest mb-4">
-                                Assign Ticket #{ticket.ticket_id || ticket.id}
+                                Assign Ticket #{ticket.ticket_id}
                               </h4>
                               {adminUsers.length === 0 ? (
                                 <p className="text-sm text-[#9A9A9A]">
                                   No admin users found.
                                 </p>
                               ) : (
-                                <div className="space-y-2">
+                                <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
                                   {adminUsers.map((admin: any) => (
                                     <button
                                       key={admin.user_id}
                                       onClick={async () => {
                                         await assignTo(
-                                          ticket.ticket_id || ticket.id,
+                                          ticket.ticket_id,
                                           admin.user_id,
                                         );
                                         setAssignMenuId(null);

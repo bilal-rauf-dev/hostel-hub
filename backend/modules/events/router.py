@@ -83,6 +83,21 @@ async def create_event(
                     ),
                 )
                 event = await cur.fetchone()
+                
+                if event:
+                    await cur.execute(
+                        """
+                        INSERT INTO notifications (user_id, title, body)
+                        SELECT user_id, %s, %s
+                        FROM users
+                        WHERE role = 'student'
+                        """,
+                        (
+                            f"New Event: {request_body.title}",
+                            f"{request_body.title} on {request_body.event_date} at {request_body.location}"
+                        )
+                    )
+                
                 await conn.commit()
         
         return json_response(True, event, "Event created successfully")

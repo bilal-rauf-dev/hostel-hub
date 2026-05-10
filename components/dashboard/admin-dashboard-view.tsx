@@ -2,7 +2,7 @@
 
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { maintenanceApi, usersApi, marketplaceApi, pollsApi } from '@/lib/api'
 import { 
   Users, 
@@ -15,7 +15,8 @@ import {
   ShieldCheck,
   TrendingUp,
   BarChart3,
-  Mail
+  Mail,
+  RefreshCw
 } from 'lucide-react'
 
 interface AdminDashboardViewProps {
@@ -55,34 +56,40 @@ export function AdminDashboardView({ onNavigate }: AdminDashboardViewProps) {
   }
 }
 
-  useEffect(()=>{
-    let mounted = true
-    const load = async ()=>{
-      try{
-        const [tRes, uRes, mRes, pRes] = await Promise.allSettled([
-          maintenanceApi.getAllTickets(),
-          usersApi.getAllUsers(),
-          marketplaceApi.getListings(),
-          pollsApi.getPolls()
-        ])
-        if (!mounted) return
-        const tickets = tRes.status === 'fulfilled' && tRes.value.data?.success ? (tRes.value.data.data || []) : []
-        const users = uRes.status === 'fulfilled' && uRes.value.data?.success ? (uRes.value.data.data || []) : []
-        const listings = mRes.status === 'fulfilled' && mRes.value.data?.success ? (mRes.value.data.data || []) : []
-        const polls = pRes.status === 'fulfilled' && pRes.value.data?.success ? (pRes.value.data.data || []) : []
+  const [refreshing, setRefreshing] = useState(false)
 
-        setStats([
-          { label: 'Active Tickets', value: String((tickets || []).length), trend: '', icon: Wrench, color: 'text-blue-500 bg-blue-50', tab: 'Staff Tickets' },
-          { label: 'Pending Users', value: String((users || []).filter((u:any)=>u.verification_status==='pending').length), trend: '', icon: Users, color: 'text-orange-500 bg-orange-50', tab: 'Verification' },
-          { label: 'Marketplace Items', value: String((listings || []).length), trend: '', icon: ShoppingBag, color: 'text-emerald-500 bg-emerald-50', tab: 'Marketplace' },
-          { label: 'Active Polls', value: String((polls || []).length), trend: '', icon: BarChart3, color: 'text-purple-500 bg-purple-50', tab: 'Controls' },
-        ])
-        setTickets(tickets.slice(0, 3))
-      }catch(e){ console.error(e) }
-    }
+  const load = useCallback(async () => {
+    try{
+      const [tRes, uRes, mRes, pRes] = await Promise.allSettled([
+        maintenanceApi.getAllTickets(),
+        usersApi.getAllUsers(),
+        marketplaceApi.getListings(),
+        pollsApi.getPolls()
+      ])
+      const tickets = tRes.status === 'fulfilled' && tRes.value.data?.success ? (tRes.value.data.data || []) : []
+      const users = uRes.status === 'fulfilled' && uRes.value.data?.success ? (uRes.value.data.data || []) : []
+      const listings = mRes.status === 'fulfilled' && mRes.value.data?.success ? (mRes.value.data.data || []) : []
+      const polls = pRes.status === 'fulfilled' && pRes.value.data?.success ? (pRes.value.data.data || []) : []
+
+      setStats([
+        { label: 'Active Tickets', value: String((tickets || []).length), trend: '', icon: Wrench, color: 'text-blue-500 bg-blue-50', tab: 'Staff Tickets' },
+        { label: 'Pending Users', value: String((users || []).filter((u:any)=>u.verification_status==='pending').length), trend: '', icon: Users, color: 'text-orange-500 bg-orange-50', tab: 'Verification' },
+        { label: 'Marketplace Items', value: String((listings || []).length), trend: '', icon: ShoppingBag, color: 'text-emerald-500 bg-emerald-50', tab: 'Marketplace' },
+        { label: 'Active Polls', value: String((polls || []).length), trend: '', icon: BarChart3, color: 'text-purple-500 bg-purple-50', tab: 'Controls' },
+      ])
+      setTickets(tickets.slice(0, 3))
+    }catch(e){ console.error(e) }
+  }, [])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await load()
+    setRefreshing(false)
+  }
+
+  useEffect(() => {
     load()
-    return ()=>{ mounted = false }
-  },[])
+  }, [load])
   return (
     <motion.div 
       initial={{ opacity: 0, x: 20 }}
@@ -92,7 +99,18 @@ export function AdminDashboardView({ onNavigate }: AdminDashboardViewProps) {
     >
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-2xl font-black text-[#4D5D53] tracking-tight">Staff Administration</h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-2xl font-black text-[#4D5D53] tracking-tight">Staff Administration</h3>
+            <motion.button
+              onClick={handleRefresh}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              disabled={refreshing}
+              className="p-2.5 bg-white border border-[#F0F0EE] rounded-xl text-[#79837C] hover:bg-[#FAF9F6] transition-all shadow-sm disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </motion.button>
+          </div>
           <p className="text-sm text-[#9A9A9A] font-medium mt-1">Global oversight of hostel operations and requests.</p>
         </div>
       </div>

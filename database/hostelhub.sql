@@ -1036,3 +1036,98 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_notify_post_like
 AFTER INSERT ON post_likes
 FOR EACH ROW EXECUTE FUNCTION trg_notify_post_like_fn();
+
+CREATE OR REPLACE PROCEDURE get_student_summary(
+    p_user_id IN INT,
+    p_ticket_count OUT INT,
+    p_order_count OUT INT,
+    p_post_count OUT INT,
+    p_unread_notifications OUT INT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    SELECT COUNT(*) INTO p_ticket_count
+    FROM maintenance_tickets
+    WHERE student_id = p_user_id;
+
+    SELECT COUNT(*) INTO p_order_count
+    FROM marketplace_orders
+    WHERE buyer_id = p_user_id;
+
+    SELECT COUNT(*) INTO p_post_count
+    FROM community_posts
+    WHERE user_id = p_user_id;
+
+    SELECT COUNT(*) INTO p_unread_notifications
+    FROM notifications
+    WHERE user_id = p_user_id AND is_read = FALSE;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        p_ticket_count := -1;
+        p_order_count := -1;
+        p_post_count := -1;
+        p_unread_notifications := -1;
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE process_order_cancellation(
+    p_order_id IN INT,
+    p_user_id IN INT,
+    p_success OUT BOOLEAN,
+    p_message OUT VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_order marketplace_orders%ROWTYPE;
+    v_listing_title VARCHAR(255);
+    v_seller_id INT;
+BEGIN
+    SELECT * INTO v_order
+    FROM marketplace_orders
+    WHERE order_id = p_order_id;
+
+    IF NOT FOUND THEN
+        p_success := FALSE;
+        p_message := 'Order not found.';
+        RETURN;
+    END IF;
+
+    IF v_order.buyer_id != p_user_id THEN
+        p_success := FALSE;
+        p_message := 'You do not own this order.';
+        RETURN;
+    END IF;
+
+    IF v_order.status NOT IN ('pending', 'confirmed') THEN
+        p_success := FALSE;
+        p_message := 'Only pending or confirmed orders can be cancelled.';
+        RETURN;
+    END IF;
+
+    SELECT title, seller_id INTO v_listing_title, v_seller_id
+    FROM marketplace_listings
+    WHERE listing_id = v_order.listing_id;
+
+    UPDATE marketplace_orders
+    SET status = 'cancelled'
+    WHERE order_id = p_order_id;
+
+    INSERT INTO notifications (user_id, title, body)
+    VALUES (
+        v_seller_id,
+        'Order Cancelled',
+        'A buyer cancelled their order for ' || v_listing_title || '.'
+    );
+
+    p_success := TRUE;
+    p_message := 'Order cancelled successfully.';
+
+EXCEPTION
+    WHEN OTHERS THEN
+        p_success := FALSE;
+        p_message := 'Error: ' || SQLERRM;
+END;
+$$;

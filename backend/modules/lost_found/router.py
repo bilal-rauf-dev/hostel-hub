@@ -195,6 +195,16 @@ async def resolve_item(
                     (item_id,),
                 )
                 updated = await cur.fetchone()
+                
+                if updated and item["posted_by"]:
+                    await cur.execute(
+                        """
+                        INSERT INTO notifications (user_id, title, body)
+                        VALUES (%s, %s, %s)
+                        """,
+                        (item["posted_by"], "Item Resolved", "Your lost item report has been marked as resolved.")
+                    )
+                
                 await conn.commit()
 
         return json_response(True, updated, "Item marked as resolved")

@@ -144,6 +144,10 @@ export const usersApi = {
     return apiClient.get('/api/v1/users/me')
   },
 
+  getSummary: async () => {
+    return apiClient.get('/api/v1/users/me/summary')
+  },
+
   updateMe: async (display_name?: string, contact_number?: string, profile_picture?: string, room_number?: string) => {
     return apiClient.patch('/api/v1/users/me', {
       display_name,
@@ -162,6 +166,14 @@ export const usersApi = {
 
   suspendUser: async (id: number) => {
     return apiClient.patch(`/api/v1/users/${id}/suspend`)
+  },
+
+  getPendingVerifications: async () => {
+    return apiClient.get('/api/v1/users/pending-verifications')
+  },
+
+  resendOtp: async (id: number) => {
+    return apiClient.post(`/api/v1/users/${id}/resend-otp`)
   },
 }
 
@@ -398,6 +410,9 @@ export const safetyAlertsApi = {
   toggleAlert: async (id: number) => {
     return apiClient.patch(`/api/v1/safety-alerts/${id}`)
   },
+  deleteAlert: async (id: number) => {
+    return apiClient.delete(`/api/v1/safety-alerts/${id}`)
+  },
 }
 
 // ============================================
@@ -427,5 +442,11 @@ export const settingsApi = {
   },
   updateSettings: async (settings: Record<string, string>) => {
     return apiClient.patch('/api/v1/settings/', { settings })
+  },
+  getMaintenance: async () => {
+    return apiClient.get('/api/v1/settings/maintenance')
+  },
+  toggleMaintenance: async (enabled: boolean) => {
+    return apiClient.post('/api/v1/settings/maintenance', { enabled })
   },
 }

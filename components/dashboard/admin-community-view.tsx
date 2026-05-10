@@ -20,7 +20,6 @@ interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => 
 export function AdminCommunityView({ onToast }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("Posts");
   
-
   // Posts
   const [posts, setPosts] = useState<any[]>([]);
 
@@ -55,8 +54,6 @@ export function AdminCommunityView({ onToast }: Props) {
   const [pollResultsMap, setPollResultsMap] = useState<{ [key: number]: any[] }>({});
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<any | null>(null);
-
-  
 
   const loadAll = async () => {
     const [postsRes, pollsRes, eventsRes, guideRes] = await Promise.allSettled([
@@ -112,12 +109,11 @@ export function AdminCommunityView({ onToast }: Props) {
         </p>
       </div>
 
-      
-
       {/* Tab Bar */}
       <div className="flex bg-white p-1.5 rounded-2xl border border-[#F0F0EE] shadow-sm w-fit gap-1">
         {tabs.map((tab) => (
-          <button
+          <motion.button
+            whileTap={{ scale: 0.95 }}
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
@@ -128,7 +124,7 @@ export function AdminCommunityView({ onToast }: Props) {
           >
             <tab.icon className="h-3.5 w-3.5" />
             {tab.label}
-          </button>
+          </motion.button>
         ))}
       </div>
 
@@ -170,7 +166,9 @@ export function AdminCommunityView({ onToast }: Props) {
                     </div>
                     <p className="text-sm text-[#4D5D53] line-clamp-2">{post.content}</p>
                   </div>
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={async (e) => {
                       e.stopPropagation();
                       await communityApi.deletePost(post.post_id);
@@ -180,7 +178,7 @@ export function AdminCommunityView({ onToast }: Props) {
                     className="p-2.5 rounded-xl bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors shrink-0"
                   >
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </motion.button>
                 </div>
               ))
             )}
@@ -200,12 +198,14 @@ export function AdminCommunityView({ onToast }: Props) {
               <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A]">
                 {polls.length} active polls
               </p>
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setShowPollModal(true)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-[#4D5D53] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg"
               >
                 <Plus className="h-3.5 w-3.5" /> Create Poll
-              </button>
+              </motion.button>
             </div>
             {polls.length === 0 ? (
               <div className="p-8 text-sm text-[#9A9A9A] bg-white rounded-3xl border border-[#F0F0EE]">
@@ -256,12 +256,14 @@ export function AdminCommunityView({ onToast }: Props) {
               <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A]">
                 {events.length} upcoming events
               </p>
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setShowEventModal(true)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-[#4D5D53] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg"
               >
                 <Plus className="h-3.5 w-3.5" /> Create Event
-              </button>
+              </motion.button>
             </div>
             {events.length === 0 ? (
               <div className="p-8 text-sm text-[#9A9A9A] bg-white rounded-3xl border border-[#F0F0EE]">
@@ -309,12 +311,14 @@ export function AdminCommunityView({ onToast }: Props) {
               <p className="text-[10px] font-black uppercase tracking-widest text-[#9A9A9A]">
                 {entries.length} entries
               </p>
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setShowGuideModal(true)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-[#4D5D53] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg"
               >
                 <Plus className="h-3.5 w-3.5" /> Add Entry
-              </button>
+              </motion.button>
             </div>
             {entries.length === 0 ? (
               <div className="p-8 text-sm text-[#9A9A9A] bg-white rounded-3xl border border-[#F0F0EE]">
@@ -336,7 +340,9 @@ export function AdminCommunityView({ onToast }: Props) {
                       {entry.content}
                     </p>
                   </div>
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={async (e) => {
                       e.stopPropagation();
                       await guidebookApi.deleteEntry(entry.entry_id);
@@ -346,7 +352,7 @@ export function AdminCommunityView({ onToast }: Props) {
                     className="p-2.5 rounded-xl bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors shrink-0"
                   >
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </motion.button>
                 </div>
               ))
             )}
@@ -754,7 +760,9 @@ export function AdminCommunityView({ onToast }: Props) {
                   <span className="text-[10px] font-black text-[#9A9A9A] uppercase tracking-widest">
                     {selectedPost.like_count} likes
                   </span>
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
                     onClick={async () => {
                       await communityApi.deletePost(selectedPost.post_id);
                       await loadAll();
@@ -764,7 +772,7 @@ export function AdminCommunityView({ onToast }: Props) {
                     className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-colors"
                   >
                     <Trash2 className="h-3.5 w-3.5" /> Delete Post
-                  </button>
+                  </motion.button>
                 </div>
               </motion.div>
             </motion.div>
@@ -843,13 +851,28 @@ export function AdminCommunityView({ onToast }: Props) {
                     <p className="text-sm text-[#9A9A9A]">No votes yet.</p>
                   )}
                 </div>
-                <p className="text-[10px] text-[#9A9A9A] mt-6 font-bold uppercase tracking-widest">
-                  Total votes:{" "}
-                  {(pollResultsMap[selectedPoll.poll_id] || []).reduce(
-                    (sum: number, r: any) => sum + (r.vote_count || 0),
-                    0,
-                  )}
-                </p>
+                <div className="flex justify-between items-center mt-6 pt-4 border-t border-[#F0F0EE]">
+                   <p className="text-[10px] text-[#9A9A9A] font-bold uppercase tracking-widest">
+                     Total votes:{" "}
+                     {(pollResultsMap[selectedPoll.poll_id] || []).reduce(
+                       (sum: number, r: any) => sum + (r.vote_count || 0),
+                       0,
+                     )}
+                   </p>
+                   <motion.button
+                     whileHover={{ scale: 1.05 }}
+                     whileTap={{ scale: 0.95 }}
+                     onClick={async () => {
+                       await pollsApi.deletePoll(selectedPoll.poll_id);
+                       await loadAll();
+                       setSelectedPoll(null);
+                       onToast("Poll deleted", "success");
+                     }}
+                     className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-colors"
+                   >
+                     <Trash2 className="h-3.5 w-3.5" /> Delete Poll
+                   </motion.button>
+                </div>
               </motion.div>
             </motion.div>
           </AnimatePresence>,
@@ -907,12 +930,27 @@ export function AdminCommunityView({ onToast }: Props) {
                   <span className="text-[10px] font-black text-[#9A9A9A] uppercase tracking-widest">
                     {selectedEvent.attendees ?? 0} attending
                   </span>
-                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                    {new Date(selectedEvent.event_date).toLocaleTimeString(
-                      "en-US",
-                      { hour: "2-digit", minute: "2-digit" },
-                    )}
-                  </span>
+                  <div className="flex items-center gap-4">
+                     <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                       {new Date(selectedEvent.event_date).toLocaleTimeString(
+                         "en-US",
+                         { hour: "2-digit", minute: "2-digit" },
+                       )}
+                     </span>
+                     <motion.button
+                       whileHover={{ scale: 1.05 }}
+                       whileTap={{ scale: 0.95 }}
+                       onClick={async () => {
+                         await eventsApi.deleteEvent(selectedEvent.event_id);
+                         await loadAll();
+                         setSelectedEvent(null);
+                         onToast("Event deleted", "success");
+                       }}
+                       className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-colors"
+                     >
+                       <Trash2 className="h-3.5 w-3.5" /> Delete
+                     </motion.button>
+                  </div>
                 </div>
               </motion.div>
             </motion.div>
@@ -960,7 +998,9 @@ export function AdminCommunityView({ onToast }: Props) {
                   {selectedEntry.content}
                 </p>
                 <div className="flex justify-end mt-6 pt-4 border-t border-[#F0F0EE]">
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
                     onClick={async () => {
                       await guidebookApi.deleteEntry(selectedEntry.entry_id);
                       await loadAll();
@@ -970,7 +1010,7 @@ export function AdminCommunityView({ onToast }: Props) {
                     className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-colors"
                   >
                     <Trash2 className="h-3.5 w-3.5" /> Delete Entry
-                  </button>
+                  </motion.button>
                 </div>
               </motion.div>
             </motion.div>

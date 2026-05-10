@@ -283,7 +283,20 @@ async def update_order_status(
 ) -> dict:
     """Update order status (seller only)."""
     try:
+        new_status = request_body.status
+
         async with pool.connection() as conn:
+            if new_status == "cancelled":
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "SELECT p_success, p_message FROM process_order_cancellation(%s, %s)",
+                        (order_id, user["user_id"])
+                    )
+                    result = await cur.fetchone()
+                    await conn.commit()
+                    success, message = result[0], result[1]
+                    return json_response(success, None, message)
+
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     """
@@ -301,19 +314,13 @@ async def update_order_status(
                     return json_response(False, None, "Order not found")
                 
                 is_seller = order["seller_id"] == user["user_id"]
-                is_buyer = order["buyer_id"] == user["user_id"]
                 is_admin = user.get("role") == "admin"
                 
-                allowed_statuses_seller = {"confirmed", "delivered", "cancelled"}
-                allowed_statuses_buyer = {"cancelled"}
-                
-                new_status = request_body.status
+                allowed_statuses_seller = {"confirmed", "delivered"}
                 
                 if is_admin:
                     pass
                 elif is_seller and new_status in allowed_statuses_seller:
-                    pass
-                elif is_buyer and new_status in allowed_statuses_buyer:
                     pass
                 else:
                     raise HTTPException(status_code=403, detail="Not authorized to update this order")
@@ -326,7 +333,7 @@ async def update_order_status(
                     WHERE order_id = %s
                     RETURNING order_id, buyer_id, listing_id, status, created_at
                     """,
-                    (request_body.status, order_id),
+                    (new_status, order_id),
                 )
                 updated_order = await cur.fetchone()
 
@@ -345,15 +352,6 @@ async def update_order_status(
                     notify_user_id = order["buyer_id"]
                     notify_title = "Order Delivered"
                     notify_body = f"Your order for {item_title} has been delivered!"
-                elif new_status == "cancelled":
-                    if is_seller:
-                        notify_user_id = order["buyer_id"]
-                        notify_title = "Order Cancelled"
-                        notify_body = f"Your order for {item_title} was cancelled by the seller."
-                    elif is_buyer:
-                        notify_user_id = order["seller_id"]
-                        notify_title = "Order Cancelled"
-                        notify_body = f"A buyer cancelled their order for {item_title}."
                 
                 if notify_user_id and notify_title and notify_body:
                     await cur.execute(

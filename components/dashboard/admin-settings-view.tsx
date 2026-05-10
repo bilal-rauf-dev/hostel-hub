@@ -36,10 +36,16 @@ export function AdminSettingsView({ onToast }: AdminSettingsViewProps) {
     const load = async () => {
       try {
         setLoading(true)
-        const [settingsRes, usersRes] = await Promise.allSettled([
+        const [settingsRes, usersRes, maintenanceRes] = await Promise.allSettled([
           settingsApi.getSettings(),
           usersApi.getAllUsers(),
+          settingsApi.getMaintenance()
         ])
+
+        let isMaintenance = false
+        if (maintenanceRes.status === 'fulfilled' && maintenanceRes.value.data?.success) {
+          isMaintenance = maintenanceRes.value.data.data.enabled
+        }
 
         if (settingsRes.status === 'fulfilled' && settingsRes.value.data?.success) {
           const s = settingsRes.value.data.data
@@ -48,7 +54,7 @@ export function AdminSettingsView({ onToast }: AdminSettingsViewProps) {
             marketplace_enabled: s.marketplace_enabled === 'true',
             maintenance_enabled: s.maintenance_enabled === 'true',
             panic_button_enabled: s.panic_button_enabled === 'true',
-            maintenance_mode: s.maintenance_mode === 'true',
+            maintenance_mode: isMaintenance,
           })
         }
 
@@ -73,13 +79,20 @@ export function AdminSettingsView({ onToast }: AdminSettingsViewProps) {
       setSaving(true)
       const settings: Record<string, string> = {}
       for (const [key, value] of Object.entries(toggles)) {
-        settings[key] = String(value)
+        if (key !== 'maintenance_mode') {
+          settings[key] = String(value)
+        }
       }
-      const res = await settingsApi.updateSettings(settings)
-      if (res.data?.success) {
+      
+      const [settingsRes, maintenanceRes] = await Promise.all([
+        settingsApi.updateSettings(settings),
+        settingsApi.toggleMaintenance(toggles.maintenance_mode)
+      ])
+
+      if (settingsRes.data?.success && maintenanceRes.data?.success) {
         onToast('Settings saved successfully', 'success')
       } else {
-        onToast(res.data?.message || 'Failed to save', 'error')
+        onToast('Failed to save some settings', 'error')
       }
     } catch (e: any) {
       onToast(e?.message || 'Network error', 'error')
@@ -90,15 +103,19 @@ export function AdminSettingsView({ onToast }: AdminSettingsViewProps) {
 
   const handleRefresh = async () => {
     try {
-      const res = await settingsApi.getSettings()
-      if (res.data?.success) {
+      const [res, maintRes] = await Promise.all([
+        settingsApi.getSettings(),
+        settingsApi.getMaintenance()
+      ])
+      
+      if (res.data?.success && maintRes.data?.success) {
         const s = res.data.data
         setToggles({
           registration_enabled: s.registration_enabled === 'true',
           marketplace_enabled: s.marketplace_enabled === 'true',
           maintenance_enabled: s.maintenance_enabled === 'true',
           panic_button_enabled: s.panic_button_enabled === 'true',
-          maintenance_mode: s.maintenance_mode === 'true',
+          maintenance_mode: maintRes.data.data.enabled,
         })
         onToast('Settings refreshed', 'info')
       }

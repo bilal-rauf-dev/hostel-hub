@@ -14,14 +14,17 @@ import {
   TrendingUp,
   BarChart3,
   ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { pollsApi, communityApi } from "@/lib/api";
 import { isAdmin, getCurrentUser } from "@/lib/auth";
 
-interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => void }
+interface Props {
+  onToast: (msg: string, type: "success" | "error" | "info") => void;
+}
 
 export function CommunityView({ onToast }: Props) {
   const currentUser = getCurrentUser();
@@ -31,54 +34,56 @@ export function CommunityView({ onToast }: Props) {
   const [polls, setPolls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-    const [showCreate, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState<string[]>(["", ""]);
   const [deadline, setDeadline] = useState("");
   const [userVotes, setUserVotes] = useState<{ [key: number]: number }>({}); // poll_id -> option_id
   const [pollResults, setPollResults] = useState<{ [key: number]: any[] }>({}); // poll_id -> results
 
-  
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        setLoading(true);
-        const res = await pollsApi.getPolls();
-        console.log("Polls response:", res.data);
-        if (!mounted) return;
-        if (res.data?.success) {
-          setPolls(res.data.data || []);
-          // Load results for each poll
-          const allResults: { [key: number]: any[] } = {};
-          for (const poll of res.data.data || []) {
-            try {
-              const resultsRes = await pollsApi.getPollResults(poll.poll_id);
-              if (resultsRes.data?.success) {
-                allResults[poll.poll_id] = resultsRes.data.data;
-              }
-            } catch (e) {
-              // silently fail on individual poll result loads
-            }
-          }
-          setPollResults(allResults);
-        } else {
-          setError(res.data?.message || "Failed to load polls");
-        }
+  const [refreshing, setRefreshing] = useState(false);
 
-        const postsRes = await communityApi.getPosts();
-        if (postsRes.data?.success) setPosts(postsRes.data.data || []);
-      } catch (err: any) {
-        setError(err?.message || "Network error");
-      } finally {
-        if (mounted) setLoading(false);
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await pollsApi.getPolls();
+      if (res.data?.success) {
+        setPolls(res.data.data || []);
+        // Load results for each poll
+        const allResults: { [key: number]: any[] } = {};
+        for (const poll of res.data.data || []) {
+          try {
+            const resultsRes = await pollsApi.getPollResults(poll.poll_id);
+            if (resultsRes.data?.success) {
+              allResults[poll.poll_id] = resultsRes.data.data;
+            }
+          } catch (e) {
+            // silently fail on individual poll result loads
+          }
+        }
+        setPollResults(allResults);
+      } else {
+        setError(res.data?.message || "Failed to load polls");
       }
-    };
-    load();
-    return () => {
-      mounted = false;
-    };
+
+      const postsRes = await communityApi.getPosts();
+      if (postsRes.data?.success) setPosts(postsRes.data.data || []);
+    } catch (err: any) {
+      setError(err?.message || "Network error");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const handleOpenCreate = () => setShowCreate(true);
 
@@ -129,9 +134,22 @@ export function CommunityView({ onToast }: Props) {
       className="space-y-8"
     >
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-        <h3 className="text-2xl font-black text-[#4D5D53] tracking-tight">
-          Community Feed
-        </h3>
+        <div className="flex items-center gap-3">
+          <h3 className="text-2xl font-black text-[#4D5D53] tracking-tight">
+            Community Feed
+          </h3>
+          <motion.button
+            onClick={handleRefresh}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            disabled={refreshing}
+            className="p-2.5 bg-white border border-[#F0F0EE] rounded-xl text-[#79837C] hover:bg-[#FAF9F6] transition-all shadow-sm disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+            />
+          </motion.button>
+        </div>
         <div className="flex gap-2 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#BDBDBD]" />
@@ -155,7 +173,6 @@ export function CommunityView({ onToast }: Props) {
         </div>
       </div>
 
-      
       {/* Create Poll Modal */}
       {showCreate &&
         createPortal(
@@ -591,9 +608,6 @@ export function CommunityView({ onToast }: Props) {
               Keep it respectful, supportive, and hub-friendly. No spam or
               commercial posts outside Marketplace.
             </p>
-            <button className="text-[10px] font-black uppercase tracking-widest text-[#D4A373] hover:underline underline-offset-8">
-              Read Full Rules
-            </button>
           </div>
         </div>
       </div>
