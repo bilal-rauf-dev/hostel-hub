@@ -122,9 +122,6 @@ hostel-hub/
 │   └── dashboard/
 ├── database/
 │   └── hostelhub.sql
-├── diagrams/
-│   ├── ERD.png
-│   └── EERD.png
 └── README.md
 ```
 
@@ -212,28 +209,11 @@ FastAPI automatically generates interactive API documentation. When the backend 
 
 ## Default Credentials
 
-Use these credentials to explore the admin functionality immediately:
+Use these credentials to explore the functionality immediately:
 
 | Role | Email | Password |
 | :--- | :--- | :--- |
-| **Admin** | `[admin email]` | `[admin password]` |
+| **Test user** | `test@hostel.edu` | `test` |
 
 ---
 
-## Team
-
-| Name | Student ID | Role |
-| :--- | :--- | :--- |
-| **Bilal Rauf** | 24F-0508 | Full-Stack Developer & Database Architect |
-| **Wajeeha Sajid** | 24F-0806 | Full-Stack Developer & UI/UX Designer |
-
----
-
-## Academic Info
-
-| | |
-| :--- | :--- |
-| **Subject** | Database Systems |
-| **Institution** | FAST NUCES |
-| **Academic Year** | 2025-2026 |
-| **Submission Date** | May 2026 |
