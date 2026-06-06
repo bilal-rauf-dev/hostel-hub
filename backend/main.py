@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
         await close_db_pool(app)
 
 
-app = FastAPI(title="Hostel-Hub API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Hostel-Hub API", version="1.0.0", lifespan=lifespan, redirect_slashes=False)
 
 app.add_middleware(
     CORSMiddleware,
