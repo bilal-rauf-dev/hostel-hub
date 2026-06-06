@@ -7,7 +7,7 @@ from core.config import settings
 
 
 def create_db_pool() -> AsyncConnectionPool:
-    return AsyncConnectionPool(conninfo=settings.database_url, open=False, kwargs={"autocommit": True})
+    return AsyncConnectionPool(conninfo=settings.database_url, open=False, kwargs={"autocommit": True, "sslmode": "require",})
 
 
 async def init_db_pool(app: FastAPI) -> None:
