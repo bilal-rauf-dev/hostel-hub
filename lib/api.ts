@@ -327,6 +327,10 @@ export const eventsApi = {
   getEventRsvps: async (event_id: number) => {
     return apiClient.get(`/api/v1/events/${event_id}/rsvps`)
   },
+
+  deleteEvent: async (event_id: number) => {
+  return apiClient.delete(`/api/v1/events/${event_id}`)
+  },
 }
 
 // ============================================
