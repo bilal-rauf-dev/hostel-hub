@@ -10,6 +10,11 @@
 ![JWT Auth](https://img.shields.io/badge/JWT-black?style=for-the-badge&logo=JSON%20web%20tokens)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
 
+**Live URL:**
+```
+https://hostel-hub-ten.vercel.app/
+```
+
 ---
 
 ## Table of Contents
