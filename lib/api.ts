@@ -294,6 +294,10 @@ export const pollsApi = {
   getPollResults: async (poll_id: number) => {
     return apiClient.get(`/api/v1/polls/${poll_id}/results`)
   },
+
+  deletePoll: async (poll_id: number) => {
+  return apiClient.delete(`/api/v1/polls/${poll_id}`)
+  },
 }
 
 // ============================================
