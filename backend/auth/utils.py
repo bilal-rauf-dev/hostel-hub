@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import bcrypt
 
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
@@ -10,11 +11,13 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds
 
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    return bcrypt.hashpw(plain.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    if len(plain.encode('utf-8')) > 72:
+        return False
+    return bcrypt.checkpw(plain.encode('utf-8'), hashed.encode('utf-8'))
 
 
 def _create_token(data: dict, expires_delta: timedelta) -> str:
