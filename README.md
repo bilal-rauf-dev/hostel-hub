@@ -14,6 +14,13 @@
 ```
 https://hostel-hub-ten.vercel.app/
 ```
+## Default Credentials
+
+Use these credentials to explore the functionality immediately:
+
+| Role | Email | Password |
+| :--- | :--- | :--- |
+| **Test user** | `test@hostel.edu` | `test` |
 
 ---
 
@@ -209,16 +216,6 @@ hostel-hub/
 FastAPI automatically generates interactive API documentation. When the backend is running, access it here:
 
 [![Swagger API Docs](https://img.shields.io/badge/Swagger%20UI-API%20Docs-85EA2D?style=for-the-badge&logo=swagger)](http://localhost:8000/docs)
-
----
-
-## Default Credentials
-
-Use these credentials to explore the functionality immediately:
-
-| Role | Email | Password |
-| :--- | :--- | :--- |
-| **Test user** | `test@hostel.edu` | `test` |
 
 ---
 
