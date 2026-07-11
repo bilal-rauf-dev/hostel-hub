@@ -372,7 +372,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
               V1
             </div>
             <p className="text-[10px] text-[#BDBDBD] font-bold uppercase tracking-widest">
-              Build 2024.1
+              Build 2026.5
             </p>
           </div>
         </div>
