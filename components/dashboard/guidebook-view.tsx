@@ -1,8 +1,17 @@
 "use client";
 
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { guidebookApi } from "@/lib/api";
+import { useResource } from "@/hooks/use-resource";
+import { TTL } from "@/lib/offline/store";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  StaleMarker,
+} from "@/components/offline/resource-states";
+import type { GuidebookEntry } from "@/lib/types";
 import {
   BookOpen,
   Wifi,
@@ -19,31 +28,26 @@ import {
 import { createPortal } from "react-dom";
 
 export function GuidebookView() {
-  const [selectedGuide, setSelectedGuide] = useState<any | null>(null);
-  const [entries, setEntries] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [selectedGuide, setSelectedGuide] = useState<GuidebookEntry | null>(
+    null,
+  );
+  // Cached for a day. The guidebook holds the rules and emergency contacts,
+  // which is exactly what a student needs when they have no connection.
+  const { data, status, error, isStale, fetchedAt, refresh } = useResource<
+    GuidebookEntry[]
+  >({
+    resource: "guidebook",
+    scope: "guest",
+    ttlMs: TTL.guidebook,
+    fetcher: async () => {
+      const res = await guidebookApi.getEntries();
+      if (!res.data?.success) throw new Error(res.data?.message);
+      return (res.data.data ?? []) as GuidebookEntry[];
+    },
+  });
 
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        setLoading(true);
-        const res = await guidebookApi.getEntries();
-        if (!mounted) return;
-        if (res.data?.success) setEntries(res.data.data || []);
-        else setError(res.data?.message || "Failed to load guidebook");
-      } catch (e: any) {
-        setError(e?.message || "Network error");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const entries = data ?? [];
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -65,8 +69,28 @@ export function GuidebookView() {
         </div>
         <BookOpen className="absolute -right-10 -bottom-10 h-64 w-64 text-white/5 rotate-12" />
       </div>
+      {isStale && (
+        <div className="flex justify-end">
+          <StaleMarker fetchedAt={fetchedAt} />
+        </div>
+      )}
+
+      {status === "loading" && <LoadingState label="Loading the guidebook" />}
+
+      {status === "error" && (
+        <ErrorState message={error ?? "Unknown error"} onRetry={refresh} />
+      )}
+
+      {status === "ready" && entries.length === 0 && (
+        <EmptyState
+          title="No guidebook entries yet"
+          hint="Hostel staff have not published any guides."
+          icon={BookOpen}
+        />
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {(entries || []).map((guide, idx) => (
+        {entries.map((guide, idx) => (
           <motion.div
             key={guide.entry_id || idx}
             onClick={() => setSelectedGuide(guide)}
@@ -85,7 +109,7 @@ export function GuidebookView() {
               {guide.title}
             </h4>
             <p className="text-sm font-medium text-[#79837C] leading-relaxed mb-8 tracking-tight">
-              {guide.content || guide.desc || guide.description}
+              {guide.content}
             </p>
             <div className="flex items-center text-[10px] font-black uppercase tracking-[0.25em] text-[#D4A373] group-hover:pl-2 transition-all">
               Comprehensive Guide <ChevronRight className="h-4 w-4 ml-1" />

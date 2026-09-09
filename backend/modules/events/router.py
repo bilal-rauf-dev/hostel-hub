@@ -5,7 +5,7 @@ import psycopg
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from auth.dependencies import get_current_user, require_admin
+from auth.dependencies import get_current_user, get_optional_user, require_admin
 from database.connection import get_db_pool
 
 router = APIRouter(prefix="/api/v1/events", tags=["events"])
@@ -29,10 +29,14 @@ class RSVPEventRequest(BaseModel):
 
 @router.get("/")
 async def get_events(
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_optional_user),
     pool=Depends(get_db_pool),
 ) -> dict:
-    """Get upcoming events (where event_date > NOW())."""
+    """Get upcoming events (where event_date > NOW()).
+
+    Public. Guests get the aggregate attendee count but never attendee
+    identities, and `my_rsvp` is always null for them.
+    """
     try:
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
@@ -48,7 +52,7 @@ async def get_events(
                 GROUP BY e.event_id
                 ORDER BY e.event_date ASC
                 """,
-                (user["user_id"],),
+                (user["user_id"] if user else None,),
                 )
                 events = await cur.fetchall()
         

@@ -5,7 +5,7 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from pydantic import BaseModel
 
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_user, get_optional_user
 from database.connection import get_db_pool
 
 router = APIRouter(prefix="/api/v1/marketplace", tags=["marketplace"])
@@ -45,10 +45,15 @@ async def get_listings(
     category: str | None = Query(None),
     min_price: float | None = Query(None),
     max_price: float | None = Query(None),
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_optional_user),
     pool=Depends(get_db_pool),
 ) -> dict:
-    """Get marketplace listings with optional filters."""
+    """Get marketplace listings with optional filters.
+
+    Public. Guests see the item and the seller's display name; the seller's
+    user id is withheld so a guest cannot map listings back to residents, and
+    ordering still requires an account.
+    """
     try:
         # Build dynamic WHERE clause
         where_clauses = ["status = 'active'"]
@@ -72,12 +77,14 @@ async def get_listings(
             params.append(max_price)
         
         where_clause = " AND ".join(where_clauses)
-        
+        seller_id_column = "ml.seller_id" if user is not None else "NULL::int"
+
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     f"""
-                    SELECT ml.listing_id, ml.seller_id, ml.title, ml.description,
+                    SELECT ml.listing_id, {seller_id_column} AS seller_id,
+                    ml.title, ml.description,
                     ml.category, ml.price, ml.status, ml.quantity,
                     ml.created_at, u.display_name AS seller_display_name
                     FROM marketplace_listings ml

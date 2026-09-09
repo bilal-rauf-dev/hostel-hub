@@ -19,6 +19,11 @@ import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { marketplaceApi } from '@/lib/api'
 import { getCurrentUser } from '@/lib/auth'
+import { useResource } from '@/hooks/use-resource'
+import { TTL } from '@/lib/offline/store'
+import { useSession, useWriteGuard } from '@/lib/session/session-context'
+import { ErrorState, LoadingState, StaleMarker } from '@/components/offline/resource-states'
+import type { Listing, Order } from '@/lib/types'
 
 function CreateListingForm({ onDone, onCancel }: { onDone: (success: boolean, message?: string) => void; onCancel: () => void }) {
   const [title, setTitle] = useState('')
@@ -90,12 +95,9 @@ interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => 
 export function MarketplaceView({ onToast }: Props) {
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [view, setView] = useState<'Market' | 'Orders' | 'Listings'>('Market')
-  const [listings, setListings] = useState<any[]>([])
   const currentUser = getCurrentUser()
-  const [orders, setOrders] = useState<any[]>([])
-  const [receivedOrders, setReceivedOrders] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { isGuest, scope } = useSession()
+  const guardWrite = useWriteGuard()
   const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -112,6 +114,7 @@ export function MarketplaceView({ onToast }: Props) {
 
   const handlePlaceOrder = async () => {
     if (!quantityModal.listing) return
+    if (!guardWrite('place an order')) return
     try {
       const res = await marketplaceApi.placeOrder(quantityModal.listing.listing_id, quantityValue)
       if (res.data?.success) {
@@ -132,60 +135,69 @@ export function MarketplaceView({ onToast }: Props) {
 
   const [refreshing, setRefreshing] = useState(false)
 
-  const load = useCallback(async (targetView = view) => {
-    try {
-      const [listRes, ordersRes, receivedRes] = await Promise.all([
-        (targetView === 'Market' || targetView === 'Listings') ? marketplaceApi.getListings(debouncedSearch, selectedCategory === 'All' ? undefined : selectedCategory) : Promise.resolve({ data: { success: false } }),
-        (targetView === 'Orders') ? marketplaceApi.getMyOrders() : Promise.resolve({ data: { success: false } }),
-        (targetView === 'Listings') ? marketplaceApi.getReceivedOrders() : Promise.resolve({ data: { success: false } }),
-      ])
+  const categoryParam = selectedCategory === 'All' ? undefined : selectedCategory
 
-      if (targetView === 'Market' || targetView === 'Listings') {
-        if (listRes.data?.success) setListings(listRes.data.data || [])
-      }
-      if (targetView === 'Orders') {
-        if (ordersRes.data?.success) setOrders(ordersRes.data.data || [])
-      }
-      if (targetView === 'Listings') {
-        if (receivedRes.data?.success) setReceivedOrders(receivedRes.data.data || [])
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load marketplace data')
-    }
-  }, [debouncedSearch, selectedCategory, view])
+  // Listings are public, so they sit in the guest scope and stay readable
+  // offline and signed out. The cache key carries the active filters.
+  const listingsResource = useResource<Listing[]>({
+    resource: `marketplace:listings?q=${debouncedSearch}&c=${selectedCategory}`,
+    scope: 'guest',
+    ttlMs: TTL.listings,
+    fetcher: async () => {
+      const res = await marketplaceApi.getListings(debouncedSearch, categoryParam)
+      if (!res.data?.success) throw new Error(res.data?.message)
+      return (res.data.data ?? []) as Listing[]
+    },
+  })
 
-  const loadMarketplace = load
+  // Orders are personal: user scope, skipped for guests.
+  const ordersResource = useResource<Order[]>({
+    resource: 'marketplace:orders:mine',
+    scope,
+    ttlMs: TTL.listings,
+    enabled: !isGuest,
+    fetcher: async () => {
+      const res = await marketplaceApi.getMyOrders()
+      if (!res.data?.success) throw new Error(res.data?.message)
+      return (res.data.data ?? []) as Order[]
+    },
+  })
+
+  const receivedResource = useResource<Order[]>({
+    resource: 'marketplace:orders:received',
+    scope,
+    ttlMs: TTL.listings,
+    enabled: !isGuest,
+    fetcher: async () => {
+      const res = await marketplaceApi.getReceivedOrders()
+      if (!res.data?.success) throw new Error(res.data?.message)
+      return (res.data.data ?? []) as Order[]
+    },
+  })
+
+  const listings = listingsResource.data ?? []
+  const orders = ordersResource.data ?? []
+  const receivedOrders = receivedResource.data ?? []
+
+  const activeResource =
+    view === 'Orders' ? ordersResource : view === 'Listings' ? receivedResource : listingsResource
+
+  const loadMarketplace = useCallback(async () => {
+    await Promise.all([
+      listingsResource.refresh(),
+      isGuest ? Promise.resolve() : ordersResource.refresh(),
+      isGuest ? Promise.resolve() : receivedResource.refresh(),
+    ])
+  }, [listingsResource, ordersResource, receivedResource, isGuest])
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await load()
-    setRefreshing(false)
-  }
-
-  useEffect(() => {
-    let mounted = true
-    const loadInit = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const [listRes, ordersRes, receivedRes] = await Promise.all([
-          marketplaceApi.getListings(debouncedSearch, selectedCategory === 'All' ? undefined : selectedCategory),
-          marketplaceApi.getMyOrders(),
-          marketplaceApi.getReceivedOrders(),
-        ])
-        if (!mounted) return
-        if (listRes.data?.success) setListings(listRes.data.data || [])
-        if (ordersRes.data?.success) setOrders(ordersRes.data.data || [])
-        if (receivedRes.data?.success) setReceivedOrders(receivedRes.data.data || [])
-      } catch (err: any) {
-        if (mounted) setError(err?.message || 'Failed to load marketplace')
-      } finally {
-        if (mounted) setLoading(false)
-      }
+    try {
+      await loadMarketplace()
+    } finally {
+      setRefreshing(false)
     }
-    loadInit()
-    return () => { mounted = false }
-  }, [selectedCategory, debouncedSearch])
+  }
 
   const categories = ['All', 'Electronics', 'Books', 'Clothing', 'Food', 'Other']
 
@@ -203,7 +215,7 @@ export function MarketplaceView({ onToast }: Props) {
             <motion.button 
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={async () => { setView('Market'); await loadMarketplace('Market') }}
+              onClick={() => setView('Market')}
               className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'Market' ? 'bg-[#4D5D53] text-white shadow-lg' : 'text-[#9A9A9A] hover:bg-[#FAF9F6]'}`}
             >
               Browse Market
@@ -211,7 +223,7 @@ export function MarketplaceView({ onToast }: Props) {
             <motion.button 
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={async () => { setView('Orders'); await loadMarketplace('Orders') }}
+              onClick={() => setView('Orders')}
               className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'Orders' ? 'bg-[#4D5D53] text-white shadow-lg' : 'text-[#9A9A9A] hover:bg-[#FAF9F6]'}`}
             >
               My Orders
@@ -219,7 +231,7 @@ export function MarketplaceView({ onToast }: Props) {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={async () => { setView('Listings'); await loadMarketplace('Listings') }}
+              onClick={() => setView('Listings')}
               className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${view === 'Listings' ? 'bg-[#4D5D53] text-white shadow-lg' : 'text-[#9A9A9A] hover:bg-[#FAF9F6]'}`}
             >
               My Listings
@@ -449,7 +461,10 @@ export function MarketplaceView({ onToast }: Props) {
               <motion.button 
                 whileHover={{ scale: 1.02, y: -2 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => setCreating(true)}
+                onClick={() => {
+                  if (!guardWrite('create a listing')) return
+                  setCreating(true)
+                }}
                 className="w-full md:w-auto px-8 py-4 bg-[#4D5D53] text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#4D5D53]/20 hover:bg-[#3D4D43] transition-all"
               >
                 <Plus className="h-5 w-5" />
@@ -555,7 +570,22 @@ export function MarketplaceView({ onToast }: Props) {
         </AnimatePresence>
       </div>
 
-      {listings.length === 0 && !loading && (
+      {activeResource.isStale && (
+        <div className="flex justify-end">
+          <StaleMarker fetchedAt={activeResource.fetchedAt} />
+        </div>
+      )}
+
+      {activeResource.status === 'loading' && <LoadingState label="Loading the marketplace" />}
+
+      {activeResource.status === 'error' && (
+        <ErrorState
+          message={activeResource.error ?? 'Unknown error'}
+          onRetry={activeResource.refresh}
+        />
+      )}
+
+      {view === 'Market' && listings.length === 0 && activeResource.status === 'ready' && (
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -643,7 +673,7 @@ export function MarketplaceView({ onToast }: Props) {
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
-                      order.status === 'fulfilled' || order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600'
+                      order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600'
                       : order.status === 'confirmed' ? 'bg-blue-50 text-blue-600'
                       : order.status === 'cancelled' ? 'bg-red-50 text-red-500'
                       : 'bg-orange-50 text-orange-500'
@@ -751,7 +781,7 @@ export function MarketplaceView({ onToast }: Props) {
                       Order #{order.order_id}
                     </span>
                     <h4 className="font-bold text-[#4D5D53] tracking-tight text-lg">
-                      {order.item_title || order.listing_title || order.item_name}
+                      {order.item_title}
                     </h4>
                     <p className="text-xs text-[#9A9A9A] font-bold">
                       {new Date(order.created_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })} • Rs.{order.total_price ?? order.price}
@@ -761,7 +791,7 @@ export function MarketplaceView({ onToast }: Props) {
                 <div className="flex items-center gap-8 self-end sm:self-auto">
                   <div className="text-right">
                     <div className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
-                      order.status === 'fulfilled' || order.status === 'delivered'
+                      order.status === 'delivered'
                         ? 'text-emerald-500 bg-emerald-50'
                         : order.status === 'cancelled'
                         ? 'text-red-500 bg-red-50'
@@ -770,7 +800,7 @@ export function MarketplaceView({ onToast }: Props) {
                       {order.status}
                     </div>
                   </div>
-                  {(order.status === 'pending' || order.status === 'confirmed') && (
+                  {order.status === 'confirmed' && (
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}

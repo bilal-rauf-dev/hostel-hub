@@ -1,6 +1,6 @@
 # Plan: Offline-first reads and guest mode
 
-**Status:** Planned, not started
+**Status:** Phases 0-4 implemented on the branch, uncommitted. Phase 5 partial.
 **Branch:** `feat/offline-first-guest-mode`
 **Decision record:** [ADR 0001](../adr/0001-offline-first-with-guest-mode.md)
 
@@ -331,3 +331,92 @@ Phase 5  tests + manual verification ...... gate before merge to main
 Phases 1 and 2 ship behind no flag because nothing consumes them yet. Phase 3
 onward is user-visible; keep `main` deployable by merging complete phases
 rather than partial ones.
+
+
+---
+
+## Implementation log
+
+Written after the build pass. Everything below is on the branch and
+**uncommitted** -- review it before committing anything.
+
+### What landed
+
+**Phase 0**
+- `.gitattributes` added. The renormalise commit itself has NOT been run;
+  do `git add --renormalize .` and commit it alone before anything else.
+- `.env.example` rewritten for this project's real variables.
+- Maintenance-mode contract bug fixed: `app/page.tsx` now reads
+  `data.enabled`. It also no longer locks the user out when the check itself
+  cannot reach the server, which was the wrong behaviour for an offline-capable
+  app.
+- `lib/types/` created: `api.ts` plus one file per module.
+- CORS moved to a `CORS_ORIGINS` env var (`settings.cors_origin_list`).
+- `get_current_user` no longer selects `password_hash`.
+
+**Phase 1** - `lib/offline/store.ts`. IndexedDB wrapper with scoped keys, TTLs,
+`CACHE_SCHEMA_VERSION` invalidation, quota eviction, and an in-memory fallback
+for private browsing.
+
+**Phase 2** - `lib/offline/resource.ts` (cache-then-network, dedupe, error
+mapping), `lib/offline/connectivity.tsx` (health probe with backoff, visibility
+aware), `hooks/use-resource.ts` (the React binding), `lib/offline/format.ts`.
+
+**Phase 3**
+- `get_optional_user` in `backend/auth/dependencies.py`. An expired token
+  degrades to guest rather than 401, so a stale tab still shows public content.
+- Public reads: guidebook, safety alerts, events, lost & found, marketplace
+  listings. Redaction is in the SQL. Guests get `created_by`, `reporter` and
+  `seller_id` as `NULL::int`, so listings cannot be used to enumerate
+  residents.
+- `GET /api/v1/public/bootstrap` in `backend/modules/public/`.
+- `lib/session/session-context.tsx`: three modes, `useWriteGuard`, and a
+  `signOut` that clears the user's cache scope before dropping the identity.
+- `components/offline/`: connection banner, four resource states, sign-in
+  prompt modal.
+- "Continue as guest" on the login form.
+- The axios 401 interceptor no longer tries to refresh when no refresh token
+  exists, so a guest hitting a private route is not bounced to login.
+
+**Phase 4** - migrated: guidebook, events, lost & found, marketplace, overview,
+and the dashboard shell (notifications, profile, safety alerts). The shell's two
+unconditional `setInterval` polls are gone; revalidation is visibility-aware.
+
+### Bugs the type layer surfaced
+
+Worth reading, because these were all live:
+
+1. **Placing an order has never worked.** `place_order()` inserts `'pending'`
+   into `order_status`, an enum of `('confirmed','delivered','cancelled')`.
+   `marketplace_orders.status` also defaults to `'pending'`. Both are invalid.
+   Fixed by `database/migrations/0001_add_pending_order_status.sql`, which must
+   be applied.
+2. **Notifications could not be marked read.** The dashboard filtered on
+   `notif.id`; the API returns `notification_id`, so the click did nothing.
+3. **Dead UI branches** in marketplace keyed on `'fulfilled'`, a status the
+   database cannot produce.
+4. **Missing fields** rendered as `undefined`: `event.image`, `event.category`,
+   `item.image` (the column is `image_url`). The events category filter was
+   filtering on a field the API never returns.
+5. `item_date` can be null, and `new Date(null)` was being formatted.
+
+### Not done
+
+- **Phase 5 is partial.** `npx tsc --noEmit` and `npx next build` both pass
+  clean. No test suite was added -- Vitest, RTL and pytest still need setting
+  up, and the manual matrix in Phase 5 has not been run against a live backend.
+- Views still on the old fetch pattern: tickets, community, settings,
+  staff-tickets, verification, admin-community, admin-settings,
+  admin-dashboard, safety-alerts (admin). All are authenticated-only, so they
+  are correct today, just not cached.
+- The 400-line split for `marketplace-view.tsx` (838 lines) and
+  `admin-community-view.tsx` (1022 lines) has not been done.
+- `refactor-toast.js` is still at the repo root. The device shell cannot delete
+  files; remove it by hand.
+
+### Verify before merging
+
+The one that matters: sign in as user A, browse, sign out, sign in as user B on
+the same browser, and confirm none of A's orders, tickets or notifications
+appear. `SessionProvider.signOut` clears the `user:<id>:` scope, but this is
+the failure mode worth checking by hand.

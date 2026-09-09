@@ -16,11 +16,16 @@ import {
   Inbox,
   RefreshCw
 } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { lostFoundApi } from '@/lib/api'
 import { getCurrentUser } from '@/lib/auth'
 import Image from 'next/image'
+import { useResource } from '@/hooks/use-resource'
+import { TTL } from '@/lib/offline/store'
+import { useWriteGuard } from '@/lib/session/session-context'
+import { ErrorState, LoadingState, StaleMarker } from '@/components/offline/resource-states'
+import type { LostFoundItem } from '@/lib/types'
 
 interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => void }
 
@@ -28,9 +33,6 @@ export function LostAndFoundView({ onToast }: Props) {
   const currentUser = getCurrentUser()
   const [filter, setFilter] = useState('All')
   const [searchQuery, setSearchQuery] = useState('')
-  const [items, setItems] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [showReportModal, setShowReportModal] = useState(false)
   const [reportType, setReportType] = useState<'Lost'|'Found'>('Lost')
   const [reportTitle, setReportTitle] = useState('')
@@ -41,25 +43,33 @@ export function LostAndFoundView({ onToast }: Props) {
   const [reportSubmitting, setReportSubmitting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true)
+  const guardWrite = useWriteGuard()
+
+  // Public: a guest can browse, and a signed-in student keeps the list when
+  // their connection drops.
+  const { data, status, error, isStale, fetchedAt, refresh } = useResource<
+    LostFoundItem[]
+  >({
+    resource: 'lost-found',
+    scope: 'guest',
+    ttlMs: TTL.lostFound,
+    fetcher: async () => {
       const res = await lostFoundApi.getItems()
-      if (res.data?.success) setItems(res.data.data || [])
-      else setError(res.data?.message || 'Failed to load items')
-    } catch (err: any) { setError(err?.message || 'Network error') }
-    finally { setLoading(false) }
-  }, [])
+      if (!res.data?.success) throw new Error(res.data?.message)
+      return (res.data.data ?? []) as LostFoundItem[]
+    },
+  })
+
+  const items = data ?? []
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await load()
-    setRefreshing(false)
+    try {
+      await refresh()
+    } finally {
+      setRefreshing(false)
+    }
   }
-
-  useEffect(() => {
-    load()
-  }, [load])
 
   const filteredItems = items.filter(item => {
     const matchesSearch = 
@@ -74,6 +84,7 @@ export function LostAndFoundView({ onToast }: Props) {
   })
 
   const handleReport = async () => {
+    if (!guardWrite('report a lost or found item')) return
     setShowReportModal(true)
   }
 
@@ -88,8 +99,7 @@ export function LostAndFoundView({ onToast }: Props) {
         is_anonymous: reportAnonymous,
         title: reportTitle || undefined,
       })
-      const refreshRes = await lostFoundApi.getItems()
-      if (refreshRes.data?.success) setItems(refreshRes.data.data || [])
+      await refresh()
       setShowReportModal(false)
       setReportTitle('')
       setReportDesc('')
@@ -168,12 +178,20 @@ export function LostAndFoundView({ onToast }: Props) {
         </div>
       </div>
 
+      {isStale && (
+        <div className="flex justify-end">
+          <StaleMarker fetchedAt={fetchedAt} />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         <AnimatePresence mode="popLayout">
-          {loading ? (
-             <div className="col-span-full py-20 text-center text-[#9A9A9A] text-sm">Loading items...</div>
-          ) : error ? (
-             <div className="col-span-full py-20 text-center text-red-500 text-sm">Error: {error}</div>
+          {status === 'loading' ? (
+             <div className="col-span-full"><LoadingState label="Loading items" /></div>
+          ) : status === 'error' ? (
+             <div className="col-span-full">
+               <ErrorState message={error ?? 'Unknown error'} onRetry={refresh} />
+             </div>
           ) : filteredItems.length === 0 ? (
              <motion.div 
                initial={{ opacity: 0, scale: 0.95 }}
@@ -199,9 +217,9 @@ export function LostAndFoundView({ onToast }: Props) {
               >
                 <div className="bg-white rounded-[3rem] border border-[#F0F0EE] overflow-hidden shadow-sm hover:border-[#D4A373]/30 hover:bg-[#FAF9F6]/30 transition-all duration-500 flex flex-col h-full cursor-pointer relative">
                   <div className="relative h-56 bg-[#FAF9F6] shrink-0 overflow-hidden">
-                    {item.image ? (
+                    {item.image_url ? (
                       <Image 
-                        src={item.image} 
+                        src={item.image_url} 
                         alt={item.title}
                         fill
                         className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
@@ -242,7 +260,7 @@ export function LostAndFoundView({ onToast }: Props) {
                         <MapPin className="h-3.5 w-3.5" /> {item.location_tag}
                       </div>
                       <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-[#BDBDBD]">
-                        <Clock className="h-3.5 w-3.5" /> {new Date(item.item_date).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        <Clock className="h-3.5 w-3.5" /> {item.item_date ? new Date(item.item_date).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date unknown'}
                       </div>
                     </div>
 
@@ -253,7 +271,8 @@ export function LostAndFoundView({ onToast }: Props) {
                         </div>
                         <span className="text-[10px] font-black text-[#4D5D53] uppercase tracking-widest leading-none">{item.reporter_name}</span>
                       </div>
-                      {item.reporter === currentUser?.user_id && (
+                      {item.reporter != null &&
+                        item.reporter === currentUser?.user_id && (
                         <div className="flex items-center gap-2">
                           {item.item_type === 'lost' && item.status !== 'resolved' && item.status !== 'Resolved' && (
                             <motion.button
@@ -263,8 +282,7 @@ export function LostAndFoundView({ onToast }: Props) {
                                 e.stopPropagation()
                                 try {
                                   await lostFoundApi.resolveItem(item.item_id)
-                                  const refreshRes = await lostFoundApi.getItems()
-                                  if (refreshRes.data?.success) setItems(refreshRes.data.data || [])
+                                  await refresh()
                                   onToast('Item marked as found!', 'success')
                                 } catch { onToast('Failed to update item', 'error') }
                               }}
@@ -280,8 +298,7 @@ export function LostAndFoundView({ onToast }: Props) {
                               e.stopPropagation()
                               try {
                                 await lostFoundApi.archiveItem(item.item_id)
-                                const refreshRes = await lostFoundApi.getItems()
-                                if (refreshRes.data?.success) setItems(refreshRes.data.data || [])
+                                await refresh()
                                 onToast('Item deleted', 'success')
                               } catch { onToast('Failed to delete item', 'error') }
                             }}

@@ -5,7 +5,7 @@ import psycopg
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from auth.dependencies import get_current_user, require_admin
+from auth.dependencies import get_optional_user, require_admin
 from database.connection import get_db_pool
 
 router = APIRouter(prefix="/api/v1/safety-alerts", tags=["safety-alerts"])
@@ -26,24 +26,33 @@ class CreateSafetyAlertRequest(BaseModel):
 
 @router.get("/")
 async def get_safety_alerts(
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_optional_user),
     pool=Depends(get_db_pool),
 ) -> dict:
-    """Return safety alerts. Students only see active alerts, admins see all."""
+    """Return safety alerts.
+
+    Admins see every alert including the author. Students and guests see only
+    active alerts, without `created_by` -- who raised an alert is staff
+    information.
+    """
     try:
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
-                if user.get("role") == "admin":
+                if user is not None and user.get("role") == "admin":
                     await cur.execute(
                         """
-                        SELECT * FROM safety_alerts
+                        SELECT alert_id, created_by, title, body, severity,
+                               is_active, created_at
+                        FROM safety_alerts
                         ORDER BY created_at DESC
                         """,
                     )
                 else:
                     await cur.execute(
                         """
-                        SELECT * FROM safety_alerts
+                        SELECT alert_id, NULL::int AS created_by, title, body,
+                               severity, is_active, created_at
+                        FROM safety_alerts
                         WHERE is_active = TRUE
                         ORDER BY created_at DESC
                         """,

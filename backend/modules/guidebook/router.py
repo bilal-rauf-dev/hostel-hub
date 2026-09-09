@@ -5,7 +5,7 @@ import psycopg
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from auth.dependencies import get_current_user, require_admin
+from auth.dependencies import get_optional_user, require_admin
 from database.connection import get_db_pool
 
 router = APIRouter(prefix="/api/v1/guidebook", tags=["guidebook"])
@@ -31,10 +31,14 @@ class UpdateGuidebookEntryRequest(BaseModel):
 
 @router.get("/")
 async def get_guidebook_entries(
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_optional_user),
     pool=Depends(get_db_pool),
 ) -> dict:
-    """Get guidebook entries ordered by category and date."""
+    """Get guidebook entries ordered by category and date.
+
+    Public: hostel rules and emergency contacts are exactly the content a
+    student most needs when they are offline or not signed in.
+    """
     try:
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:

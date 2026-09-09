@@ -18,11 +18,13 @@ import { saveTokens, decodeToken } from "@/lib/auth";
 
 interface LoginFormProps {
   onLogin: (role: "student" | "admin") => void;
+  /** Enter the app without an account. Public content only, no writes. */
+  onGuest?: () => void;
 }
 
 type FormView = "login" | "register" | "register-otp";
 
-export function LoginForm({ onLogin }: LoginFormProps) {
+export function LoginForm({ onLogin, onGuest }: LoginFormProps) {
   const [formView, setFormView] = useState<FormView>("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -329,6 +331,30 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
                 </motion.button>
               </form>
+
+              {onGuest && (
+                <div className="pt-8">
+                  <div className="flex items-center gap-4">
+                    <div className="h-px flex-1 bg-[#F0F0EE]" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[#BDBDBD]">
+                      or
+                    </span>
+                    <div className="h-px flex-1 bg-[#F0F0EE]" />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={onGuest}
+                    className="mt-6 w-full rounded-[2rem] border-2 border-[#F0F0EE] py-5 text-sm font-black uppercase tracking-widest text-[#4D5D53] transition-all hover:border-[#D4A373]/40 hover:bg-[#FAF9F6] focus:outline-none focus-visible:ring-4 focus-visible:ring-[#D4A373]/20"
+                  >
+                    Continue as guest
+                  </button>
+                  <p className="mt-3 text-center text-xs font-medium text-[#9A9A9A]">
+                    Browse the marketplace, events, lost &amp; found and the
+                    guidebook. Posting needs an account.
+                  </p>
+                </div>
+              )}
             </>
           )}
 
