@@ -16,8 +16,13 @@ import {
 } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { usersApi } from '@/lib/api'
+import { useWriteGuard } from '@/lib/session/session-context'
 
 export function VerificationView() {
+  // Deliberately not cached for offline reading: see
+  // docs/plans/offline-first-guest-mode.md. A stale verification queue would
+  // invite an admin to act on decisions someone else has already made.
+  const guardWrite = useWriteGuard()
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [residents, setResidents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -58,6 +63,7 @@ export function VerificationView() {
   }, [loadPending])
 
   const handleVerify = async (id: number) => {
+    if (!guardWrite('verify a resident')) return
     try {
       setLoading(true)
       const res = await usersApi.verifyUser(id)
@@ -76,6 +82,7 @@ export function VerificationView() {
   }
 
   const handleSuspend = async (id: number) => {
+    if (!guardWrite('suspend a resident')) return
     try {
       setLoading(true)
       const res = await usersApi.suspendUser(id)
@@ -94,6 +101,7 @@ export function VerificationView() {
   }
 
   const handleResendOtp = async (id: number) => {
+    if (!guardWrite('resend a verification code')) return
     try {
       setLoading(true)
       const res = await usersApi.resendOtp(id)

@@ -17,7 +17,16 @@ import {
   RefreshCw,
 } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { useResource } from "@/hooks/use-resource";
+import { TTL } from "@/lib/offline/store";
+import { useSession, useWriteGuard } from "@/lib/session/session-context";
+import {
+  ErrorState,
+  LoadingState,
+  StaleMarker,
+} from "@/components/offline/resource-states";
+import type { CommunityPost, Poll } from "@/lib/types";
 import { createPortal } from "react-dom";
 import { pollsApi, communityApi } from "@/lib/api";
 import { isAdmin, getCurrentUser } from "@/lib/auth";
@@ -28,68 +37,97 @@ interface Props {
 
 export function CommunityView({ onToast }: Props) {
   const currentUser = getCurrentUser();
-  const [posts, setPosts] = useState<any[]>([]);
   const [postContent, setPostContent] = useState("");
   const [posting, setPosting] = useState(false);
-  const [polls, setPolls] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState<string[]>(["", ""]);
   const [deadline, setDeadline] = useState("");
   const [userVotes, setUserVotes] = useState<{ [key: number]: number }>({}); // poll_id -> option_id
-  const [pollResults, setPollResults] = useState<{ [key: number]: any[] }>({}); // poll_id -> results
+  const [localResults, setLocalResults] = useState<{ [key: number]: any[] }>({});
 
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await pollsApi.getPolls();
-      if (res.data?.success) {
-        setPolls(res.data.data || []);
-        // Load results for each poll
-        const allResults: { [key: number]: any[] } = {};
-        for (const poll of res.data.data || []) {
-          try {
-            const resultsRes = await pollsApi.getPollResults(poll.poll_id);
-            if (resultsRes.data?.success) {
-              allResults[poll.poll_id] = resultsRes.data.data;
-            }
-          } catch (e) {
-            // silently fail on individual poll result loads
-          }
-        }
-        setPollResults(allResults);
-      } else {
-        setError(res.data?.message || "Failed to load polls");
-      }
+  const { scope } = useSession();
+  const guardWrite = useWriteGuard();
 
-      const postsRes = await communityApi.getPosts();
-      if (postsRes.data?.success) setPosts(postsRes.data.data || []);
-    } catch (err: any) {
-      setError(err?.message || "Network error");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Polls and their per-option results are fetched together and cached as one
+  // payload, so an offline read shows the bars rather than empty polls.
+  const pollsResource = useResource<{
+    polls: Poll[];
+    results: { [key: number]: any[] };
+  }>({
+    resource: "community:polls",
+    scope,
+    ttlMs: TTL.community,
+    fetcher: async () => {
+      const res = await pollsApi.getPolls();
+      if (!res.data?.success) throw new Error(res.data?.message);
+      const loaded: Poll[] = res.data.data ?? [];
+
+      const results: { [key: number]: any[] } = {};
+      await Promise.all(
+        loaded.map(async (poll) => {
+          try {
+            const r = await pollsApi.getPollResults(poll.poll_id);
+            if (r.data?.success) results[poll.poll_id] = r.data.data;
+          } catch {
+            // A single poll's results failing must not sink the whole load.
+          }
+        }),
+      );
+
+      return { polls: loaded, results };
+    },
+  });
+
+  const postsResource = useResource<CommunityPost[]>({
+    resource: "community:posts",
+    scope,
+    ttlMs: TTL.community,
+    fetcher: async () => {
+      const res = await communityApi.getPosts();
+      if (!res.data?.success) throw new Error(res.data?.message);
+      return (res.data.data ?? []) as CommunityPost[];
+    },
+  });
+
+  const polls = pollsResource.data?.polls ?? [];
+  const posts = postsResource.data ?? [];
+  // Local overrides win, so a fresh vote updates the bar without a refetch.
+  const pollResults = { ...(pollsResource.data?.results ?? {}), ...localResults };
+
+  const status =
+    pollsResource.status === "loading" || postsResource.status === "loading"
+      ? "loading"
+      : pollsResource.status === "error" && postsResource.status === "error"
+        ? "error"
+        : "ready";
+
+  const isStale = pollsResource.isStale || postsResource.isStale;
+  const fetchedAt =
+    [pollsResource.fetchedAt, postsResource.fetchedAt]
+      .filter((t): t is number => typeof t === "number")
+      .sort((a, b) => a - b)[0] ?? null;
+
+  const load = useCallback(async () => {
+    await Promise.all([pollsResource.refresh(), postsResource.refresh()]);
+  }, [pollsResource, postsResource]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await load();
-    setRefreshing(false);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
   };
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const handleOpenCreate = () => setShowCreate(true);
 
   const handleCreatePoll = async () => {
+    if (!guardWrite("create a poll")) return;
     try {
-      setLoading(true);
       const opts = options.filter((o) => o.trim() !== "");
       if (!question.trim() || opts.length < 2) {
         onToast("Provide a question and at least 2 options", "error");
@@ -97,8 +135,7 @@ export function CommunityView({ onToast }: Props) {
       }
       const res = await pollsApi.createPoll(question, opts, deadline);
       if (res.data?.success) {
-        const r = await pollsApi.getPolls();
-        if (r.data?.success) setPolls(r.data.data || []);
+        await pollsResource.refresh();
         setShowCreate(false);
         setQuestion("");
         setOptions(["", ""]);
@@ -109,8 +146,6 @@ export function CommunityView({ onToast }: Props) {
       }
     } catch (e: any) {
       onToast(e?.message || "Network error", "error");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -172,6 +207,21 @@ export function CommunityView({ onToast }: Props) {
           )}
         </div>
       </div>
+
+      {isStale && (
+        <div className="flex justify-end">
+          <StaleMarker fetchedAt={fetchedAt} />
+        </div>
+      )}
+
+      {status === "loading" && <LoadingState label="Loading the feed" />}
+
+      {status === "error" && (
+        <ErrorState
+          message={postsResource.error ?? pollsResource.error ?? "Unknown error"}
+          onRetry={load}
+        />
+      )}
 
       {/* Create Poll Modal */}
       {showCreate &&
@@ -296,14 +346,13 @@ export function CommunityView({ onToast }: Props) {
                 whileTap={{ scale: 0.95 }}
                 onClick={async () => {
                   if (!postContent.trim()) return;
+                  if (!guardWrite("share a post")) return;
                   try {
                     setPosting(true);
                     const res = await communityApi.createPost(postContent);
                     if (res.data?.success) {
                       setPostContent("");
-                      const postsRes = await communityApi.getPosts();
-                      if (postsRes.data?.success)
-                        setPosts(postsRes.data.data || []);
+                      await postsResource.refresh();
                       onToast("Post shared!", "success");
                     } else {
                       onToast(res.data?.message || "Failed to post", "error");
@@ -369,10 +418,9 @@ export function CommunityView({ onToast }: Props) {
                           {post.user_id === currentUser?.user_id && (
                             <button
                               onClick={async () => {
+                                if (!guardWrite("delete a post")) return;
                                 await communityApi.deletePost(post.post_id);
-                                const postsRes = await communityApi.getPosts();
-                                if (postsRes.data?.success)
-                                  setPosts(postsRes.data.data || []);
+                                await postsResource.refresh();
                                 onToast("Post deleted", "success");
                               }}
                               className="text-[10px] font-black uppercase tracking-widest text-red-400 hover:text-red-600 transition-colors"
@@ -387,10 +435,9 @@ export function CommunityView({ onToast }: Props) {
                         <div className="flex items-center gap-4 pt-6 border-t border-[#F0F0EE]">
                           <button
                             onClick={async () => {
+                              if (!guardWrite("like a post")) return;
                               await communityApi.toggleLike(post.post_id);
-                              const postsRes = await communityApi.getPosts();
-                              if (postsRes.data?.success)
-                                setPosts(postsRes.data.data || []);
+                              await postsResource.refresh();
                             }}
                             className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-colors ${
                               post.liked_by_me
@@ -459,7 +506,7 @@ export function CommunityView({ onToast }: Props) {
                                             poll.poll_id,
                                           );
                                         if (resultsRes.data?.success) {
-                                          setPollResults((prev) => ({
+                                          setLocalResults((prev) => ({
                                             ...prev,
                                             [poll.poll_id]:
                                               resultsRes.data.data,
@@ -543,8 +590,11 @@ export function CommunityView({ onToast }: Props) {
                         )}
                         <div className="flex items-center justify-between mt-10 pt-8 border-t border-[#F0F0EE]">
                           <p className="text-[11px] text-[#9A9A9A] font-bold uppercase tracking-wide">
-                            {poll.total_votes || poll.totalVotes || 0} student
-                            responses •{" "}
+                            {(pollResults[poll.poll_id] ?? []).reduce(
+                              (sum: number, r: any) => sum + (r.vote_count ?? 0),
+                              0,
+                            )}{" "}
+                            student responses •{" "}
                             {poll.deadline
                               ? new Date(poll.deadline).toLocaleDateString(
                                   "en-US",

@@ -182,7 +182,8 @@ export async function readCache<T>(key: string): Promise<ReadResult<T> | null> {
     return {
       data: entry.data,
       fetchedAt: entry.fetchedAt,
-      isStale: Date.now() - entry.fetchedAt > entry.ttlMs,
+      // >= so an entry whose TTL has exactly elapsed counts as expired.
+      isStale: Date.now() - entry.fetchedAt >= entry.ttlMs,
     }
   } catch {
     return null

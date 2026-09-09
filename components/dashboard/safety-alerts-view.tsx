@@ -15,15 +15,17 @@ import {
   Power,
   RefreshCw
 } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { useResource } from '@/hooks/use-resource'
+import { TTL } from '@/lib/offline/store'
+import { useSession, useWriteGuard } from '@/lib/session/session-context'
+import { ErrorState, LoadingState, StaleMarker } from '@/components/offline/resource-states'
+import type { SafetyAlert } from '@/lib/types' 
 import { safetyAlertsApi } from '@/lib/api'
 
 export function SafetyAlertsView() {
    const [selectedMethod, setSelectedMethod] = useState('All')
    const [severity, setSeverity] = useState('critical')
-   const [alerts, setAlerts] = useState<any[]>([])
-   const [loading, setLoading] = useState(true)
-   const [error, setError] = useState<string|null>(null)
    const [message, setMessage] = useState('')
    const [sending, setSending] = useState(false)
    const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null)
@@ -34,30 +36,34 @@ export function SafetyAlertsView() {
       setTimeout(() => setToast(null), 3000)
    }
 
-   const loadAlerts = useCallback(async () => {
-      try {
-         setLoading(true)
+   const { scope } = useSession()
+   const guardWrite = useWriteGuard()
+
+   const { data, status, error, isStale, fetchedAt, refresh } = useResource<SafetyAlert[]>({
+      resource: 'safety-alerts:all',
+      scope,
+      ttlMs: TTL.safetyAlerts,
+      fetcher: async () => {
          const res = await safetyAlertsApi.getAlerts()
-         if (res.data?.success) setAlerts(res.data.data || [])
-         else setError(res.data?.message || 'Failed to load alerts')
-      } catch(e:any) { 
-         setError(e?.message || 'Network error') 
-      } finally { 
-         setLoading(false) 
-      }
-   }, [])
+         if (!res.data?.success) throw new Error(res.data?.message)
+         return (res.data.data ?? []) as SafetyAlert[]
+      },
+   })
+
+   const alerts = data ?? []
+   const loadAlerts = refresh
 
    const handleRefresh = async () => {
       setRefreshing(true)
-      await loadAlerts()
-      setRefreshing(false)
+      try {
+         await refresh()
+      } finally {
+         setRefreshing(false)
+      }
    }
 
-   useEffect(() => {
-      loadAlerts()
-   }, [loadAlerts])
-
    const handleBroadcast = async () => {
+      if (!guardWrite('broadcast a safety alert')) return
       if (!message.trim()) {
          pushToast('Message cannot be empty', 'error')
          return
@@ -128,6 +134,12 @@ export function SafetyAlertsView() {
           <p className="text-sm text-[#9A9A9A] font-medium mt-1">Issue hostel-wide alerts or emergency notifications.</p>
         </div>
       </div>
+
+      {isStale && (
+        <div className="flex justify-end">
+          <StaleMarker fetchedAt={fetchedAt} />
+        </div>
+      )}
 
       {toast && (
         <motion.div 
@@ -231,8 +243,10 @@ export function SafetyAlertsView() {
                  <History className="h-4 w-4 text-[#BDBDBD]" />
               </div>
               
-              {loading && alerts.length === 0 ? (
-                  <div className="text-center py-10 text-sm text-[#9A9A9A]">Loading history...</div>
+              {status === 'error' && alerts.length === 0 ? (
+                 <ErrorState message={error ?? 'Unknown error'} onRetry={refresh} />
+              ) : status === 'loading' && alerts.length === 0 ? (
+                  <LoadingState label="Loading alert history" />
               ) : alerts.length === 0 ? (
                   <div className="text-center py-20 opacity-40 space-y-4">
                      <ShieldAlert className="h-16 w-16 mx-auto text-[#BDBDBD]" />
@@ -251,8 +265,9 @@ export function SafetyAlertsView() {
                            <div className="flex items-center justify-between mb-3">
                                <div className="flex items-center gap-2">
                                   <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                                     item.severity === 'critical' ? 'bg-red-100 text-red-600' : 
-                                     item.severity === 'warning' ? 'bg-orange-100 text-orange-600' : 
+                                     item.severity === 'critical' ? 'bg-red-100 text-red-600' :
+                                     item.severity === 'high' ? 'bg-orange-100 text-orange-600' :
+                                     item.severity === 'medium' ? 'bg-amber-100 text-amber-700' :
                                      'bg-blue-100 text-blue-600'
                                   }`}>
                                      {item.severity}

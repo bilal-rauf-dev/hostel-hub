@@ -15,12 +15,17 @@ import {
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { settingsApi, usersApi } from '@/lib/api'
+import { useWriteGuard } from '@/lib/session/session-context'
 
 interface AdminSettingsViewProps {
   onToast: (msg: string, type: 'success' | 'error' | 'info') => void
 }
 
 export function AdminSettingsView({ onToast }: AdminSettingsViewProps) {
+  // Deliberately not cached for offline reading: see
+  // docs/plans/offline-first-guest-mode.md. Showing stale system settings --
+  // maintenance mode above all -- would misrepresent the live state of the app.
+  const guardWrite = useWriteGuard()
   const [toggles, setToggles] = useState({
     registration_enabled: true,
     marketplace_enabled: true,
@@ -75,6 +80,7 @@ export function AdminSettingsView({ onToast }: AdminSettingsViewProps) {
   }, [])
 
   const handleSave = async () => {
+    if (!guardWrite('change system settings')) return
     try {
       setSaving(true)
       const settings: Record<string, string> = {}

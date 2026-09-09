@@ -2,7 +2,11 @@
 
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { useResource } from '@/hooks/use-resource'
+import { TTL } from '@/lib/offline/store'
+import { useSession, useWriteGuard } from '@/lib/session/session-context'
+import { StaleMarker } from '@/components/offline/resource-states' 
 import { maintenanceApi, usersApi, marketplaceApi, pollsApi } from '@/lib/api'
 import { 
   Users, 
@@ -24,13 +28,12 @@ interface AdminDashboardViewProps {
 }
 
 export function AdminDashboardView({ onNavigate }: AdminDashboardViewProps) {
-  const [stats, setStats] = useState<any[]>([])
-  const [tickets, setTickets] = useState<any[]>([])
   const [selectedTicket, setSelectedTicket] = useState<any | null>(null)
   const [ticketStatus, setTicketStatus] = useState('submitted')
   const [savingTicket, setSavingTicket] = useState(false)
 
   const handleUpdateTicket = async () => {
+  if (!guardWrite('update a ticket')) return
   if (!selectedTicket) return
   if (ticketStatus === selectedTicket.status) {
     setSelectedTicket(null)
@@ -40,9 +43,18 @@ export function AdminDashboardView({ onNavigate }: AdminDashboardViewProps) {
     setSavingTicket(true)
     const res = await maintenanceApi.updateTicketStatus(selectedTicket.ticket_id, ticketStatus)
     if (res.data?.success) {
-      setTickets(prev => prev.map(t => 
-        t.ticket_id === selectedTicket.ticket_id ? { ...t, status: ticketStatus } : t
-      ))
+      mutate(current =>
+        current
+          ? {
+              ...current,
+              tickets: current.tickets.map((t: any) =>
+                t.ticket_id === selectedTicket.ticket_id
+                  ? { ...t, status: ticketStatus }
+                  : t,
+              ),
+            }
+          : current,
+      )
       setSelectedTicket(null)
     } else {
       console.error('Update failed:', res.data?.message)
@@ -58,38 +70,53 @@ export function AdminDashboardView({ onNavigate }: AdminDashboardViewProps) {
 
   const [refreshing, setRefreshing] = useState(false)
 
-  const load = useCallback(async () => {
-    try{
+  const { scope } = useSession()
+  const guardWrite = useWriteGuard()
+
+  const { data, isStale, fetchedAt, refresh, mutate } = useResource<{
+    stats: any[]
+    tickets: any[]
+  }>({
+    resource: 'admin:dashboard',
+    scope,
+    ttlMs: TTL.tickets,
+    fetcher: async () => {
+      // allSettled: one failing panel should not blank the whole dashboard.
       const [tRes, uRes, mRes, pRes] = await Promise.allSettled([
         maintenanceApi.getAllTickets(),
         usersApi.getAllUsers(),
         marketplaceApi.getListings(),
-        pollsApi.getPolls()
+        pollsApi.getPolls(),
       ])
       const tickets = tRes.status === 'fulfilled' && tRes.value.data?.success ? (tRes.value.data.data || []) : []
       const users = uRes.status === 'fulfilled' && uRes.value.data?.success ? (uRes.value.data.data || []) : []
       const listings = mRes.status === 'fulfilled' && mRes.value.data?.success ? (mRes.value.data.data || []) : []
       const polls = pRes.status === 'fulfilled' && pRes.value.data?.success ? (pRes.value.data.data || []) : []
 
-      setStats([
-        { label: 'Active Tickets', value: String((tickets || []).length), trend: '', icon: Wrench, color: 'text-blue-500 bg-blue-50', tab: 'Staff Tickets' },
-        { label: 'Pending Users', value: String((users || []).filter((u:any)=>u.verification_status==='pending').length), trend: '', icon: Users, color: 'text-orange-500 bg-orange-50', tab: 'Verification' },
-        { label: 'Marketplace Items', value: String((listings || []).length), trend: '', icon: ShoppingBag, color: 'text-emerald-500 bg-emerald-50', tab: 'Marketplace' },
-        { label: 'Active Polls', value: String((polls || []).length), trend: '', icon: BarChart3, color: 'text-purple-500 bg-purple-50', tab: 'Controls' },
-      ])
-      setTickets(tickets.slice(0, 3))
-    }catch(e){ console.error(e) }
-  }, [])
+      return {
+        stats: [
+          { label: 'Active Tickets', value: String((tickets || []).length), trend: '', icon: Wrench, color: 'text-blue-500 bg-blue-50', tab: 'Staff Tickets' },
+          { label: 'Pending Users', value: String((users || []).filter((u:any)=>u.verification_status==='pending').length), trend: '', icon: Users, color: 'text-orange-500 bg-orange-50', tab: 'Verification' },
+          { label: 'Marketplace Items', value: String((listings || []).length), trend: '', icon: ShoppingBag, color: 'text-emerald-500 bg-emerald-50', tab: 'Marketplace' },
+          { label: 'Active Polls', value: String((polls || []).length), trend: '', icon: BarChart3, color: 'text-purple-500 bg-purple-50', tab: 'Controls' },
+        ],
+        tickets: tickets.slice(0, 3),
+      }
+    },
+  })
+
+  const stats = data?.stats ?? []
+  const tickets = data?.tickets ?? []
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await load()
-    setRefreshing(false)
+    try {
+      await refresh()
+    } finally {
+      setRefreshing(false)
+    }
   }
 
-  useEffect(() => {
-    load()
-  }, [load])
   return (
     <motion.div 
       initial={{ opacity: 0, x: 20 }}
@@ -97,6 +124,12 @@ export function AdminDashboardView({ onNavigate }: AdminDashboardViewProps) {
       exit={{ opacity: 0, x: -20 }}
       className="space-y-8"
     >
+      {isStale && (
+        <div className="flex justify-end">
+          <StaleMarker fetchedAt={fetchedAt} />
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
