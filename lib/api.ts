@@ -28,7 +28,12 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // A 401 on a public route in guest mode is not a session problem: there
+    // was never a session. Only try to refresh when a token actually exists.
+    const hasSession =
+      typeof window !== 'undefined' && !!localStorage.getItem('hh_refresh_token')
+
+    if (error.response?.status === 401 && hasSession && !originalRequest._retry) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({
@@ -76,6 +81,20 @@ apiClient.interceptors.response.use(
     return Promise.reject(error)
   }
 )
+
+// ============================================
+// PUBLIC API (no token required)
+// ============================================
+export const publicApi = {
+  /**
+   * Guidebook, active safety alerts and upcoming events in one call.
+   * Used for a cold guest load so a sleeping backend costs one round trip
+   * rather than three.
+   */
+  getBootstrap: async () => {
+    return apiClient.get('/api/v1/public/bootstrap')
+  },
+}
 
 // ============================================
 // AUTH API

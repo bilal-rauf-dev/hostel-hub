@@ -16,6 +16,7 @@ from modules.polls.router import router as polls_router
 from modules.users.router import router as users_router
 from modules.safety_alerts.router import router as safety_alerts_router
 from modules.community import router as community_router
+from modules.public.router import router as public_router
 from modules.settings import router as settings_router
 
 
@@ -32,7 +33,7 @@ app = FastAPI(title="Hostel-Hub API", version="1.0.0", lifespan=lifespan, redire
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://hostel-hub-ten.vercel.app"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,6 +51,7 @@ app.include_router(notifications_router)
 app.include_router(safety_alerts_router)
 app.include_router(community_router.router)
 app.include_router(settings_router.router)
+app.include_router(public_router)
 
 
 @app.get("/health")

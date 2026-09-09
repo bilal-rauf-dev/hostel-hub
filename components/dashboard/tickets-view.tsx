@@ -1,7 +1,17 @@
 "use client";
 
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useResource } from "@/hooks/use-resource";
+import { TTL } from "@/lib/offline/store";
+import { useSession, useWriteGuard } from "@/lib/session/session-context";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  StaleMarker,
+} from "@/components/offline/resource-states";
+import type { Ticket } from "@/lib/types";
 import { createPortal } from "react-dom";
 import { maintenanceApi } from "@/lib/api";
 import {
@@ -115,28 +125,28 @@ function CreateTicketForm({
 interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => void }
 
 export function TicketsView({ onToast }: Props) {
-  const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
-  const [tickets, setTickets] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [creating, setCreating] = useState(false);
-  
-  
-  const loadTickets = async () => {
-    try {
-      const res = await maintenanceApi.getTickets();
-      if (res.data?.success) setTickets(res.data.data || []);
-      else setError(res.data?.message || "Failed to load tickets");
-    } catch (err: any) {
-      setError(err?.message || "Network error");
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  useEffect(() => {
-    loadTickets();
-  }, []);
+  const { scope } = useSession();
+  const guardWrite = useWriteGuard();
+
+  // Personal data: user scope, so it is wiped on sign-out.
+  const { data, status, error, isStale, fetchedAt, refresh } = useResource<
+    Ticket[]
+  >({
+    resource: "maintenance:tickets",
+    scope,
+    ttlMs: TTL.tickets,
+    fetcher: async () => {
+      const res = await maintenanceApi.getTickets();
+      if (!res.data?.success) throw new Error(res.data?.message);
+      return (res.data.data ?? []) as Ticket[];
+    },
+  });
+
+  const tickets = data ?? [];
+  const loadTickets = refresh;
 
   const activeCount = tickets.filter(
     (t) => t.status && t.status !== "resolved" && t.status !== "closed",
@@ -160,7 +170,10 @@ export function TicketsView({ onToast }: Props) {
         <motion.button
           whileHover={{ scale: 1.05, filter: "brightness(1.1)" }}
           whileTap={{ scale: 0.95 }}
-          onClick={() => setCreating(true)}
+          onClick={() => {
+            if (!guardWrite("report a maintenance issue")) return;
+            setCreating(true);
+          }}
           className="px-8 py-4 bg-[#4D5D53] text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-xl shadow-[#4D5D53]/20 transition-all border-b-4 border-black/20"
         >
           <Plus className="h-4 w-4" />
@@ -222,12 +235,21 @@ export function TicketsView({ onToast }: Props) {
 
       {/* Ticket List */}
       <div className="grid grid-cols-1 gap-4">
-        {loading ? (
-          <div className="p-6">Loading tickets...</div>
-        ) : error ? (
-          <div className="p-6 text-red-500">Error: {error}</div>
+        {isStale && (
+          <div className="flex justify-end">
+            <StaleMarker fetchedAt={fetchedAt} />
+          </div>
+        )}
+
+        {status === "loading" ? (
+          <LoadingState label="Loading your tickets" />
+        ) : status === "error" ? (
+          <ErrorState message={error ?? "Unknown error"} onRetry={refresh} />
         ) : tickets.length === 0 ? (
-          <div className="p-6 text-sm text-[#9A9A9A]">No tickets yet.</div>
+          <EmptyState
+            title="No tickets yet"
+            hint="Report a repair and it will show up here."
+          />
         ) : (
           tickets.map((ticket, idx) => (
             <motion.div

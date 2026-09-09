@@ -6,7 +6,7 @@ import psycopg
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_user, get_optional_user
 from database.connection import get_db_pool
 
 router = APIRouter(prefix="/api/v1/lost-found", tags=["lost-found"])
@@ -29,25 +29,45 @@ class PostLostFoundItemRequest(BaseModel):
 
 @router.get("/")
 async def get_lost_found_items(
-    user: dict = Depends(get_current_user),
+    user: dict | None = Depends(get_optional_user),
     pool=Depends(get_db_pool),
 ) -> dict:
-    """Get lost & found items (excluding archived, with anonymous reporter handling in SQL)."""
+    """Get lost & found items (excluding archived).
+
+    Public. Anonymous posts stay anonymous for everyone. For guests the
+    reporter's user id is withheld as well, so listings cannot be used to
+    enumerate residents. Redaction is done in the SELECT, not by stripping
+    keys afterwards.
+    """
     try:
         async with pool.connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
-                await cur.execute(
-                    """
-                    SELECT lf.item_id, lf.item_type, lf.title, lf.description, lf.location_tag,
-                           lf.item_date, lf.image_url, lf.is_anonymous, lf.is_archived, lf.status,
-                           CASE WHEN is_anonymous = TRUE THEN NULL ELSE posted_by END as reporter,
-                           CASE WHEN is_anonymous = TRUE THEN 'Anonymous' ELSE u.display_name END as reporter_name
-                    FROM lost_found_items lf
-                    LEFT JOIN users u ON lf.posted_by = u.user_id
-                    WHERE is_archived = FALSE
-                    ORDER BY lf.created_at DESC
-                    """
-                )
+                if user is None:
+                    await cur.execute(
+                        """
+                        SELECT lf.item_id, lf.item_type, lf.title, lf.description, lf.location_tag,
+                               lf.item_date, lf.image_url, lf.is_anonymous, lf.is_archived, lf.status,
+                               NULL::int AS reporter,
+                               CASE WHEN lf.is_anonymous = TRUE THEN 'Anonymous' ELSE u.display_name END AS reporter_name
+                        FROM lost_found_items lf
+                        LEFT JOIN users u ON lf.posted_by = u.user_id
+                        WHERE lf.is_archived = FALSE
+                        ORDER BY lf.created_at DESC
+                        """
+                    )
+                else:
+                    await cur.execute(
+                        """
+                        SELECT lf.item_id, lf.item_type, lf.title, lf.description, lf.location_tag,
+                               lf.item_date, lf.image_url, lf.is_anonymous, lf.is_archived, lf.status,
+                               CASE WHEN lf.is_anonymous = TRUE THEN NULL ELSE lf.posted_by END AS reporter,
+                               CASE WHEN lf.is_anonymous = TRUE THEN 'Anonymous' ELSE u.display_name END AS reporter_name
+                        FROM lost_found_items lf
+                        LEFT JOIN users u ON lf.posted_by = u.user_id
+                        WHERE lf.is_archived = FALSE
+                        ORDER BY lf.created_at DESC
+                        """
+                    )
                 items = await cur.fetchall()
 
         normalized_items = []

@@ -14,7 +14,12 @@ import {
   Volume2
 } from 'lucide-react'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useResource } from '@/hooks/use-resource'
+import { TTL } from '@/lib/offline/store'
+import { useSession, useWriteGuard } from '@/lib/session/session-context'
+import { ErrorState, LoadingState, StaleMarker } from '@/components/offline/resource-states'
+import type { NotificationsPayload, UserProfile } from '@/lib/types' 
 import { usersApi, authApi, notificationsApi } from '../../lib/api'
 import { clearTokens } from '../../lib/auth'
 
@@ -39,13 +44,10 @@ interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => 
 
 export function SettingsView({ onToast }: Props) {
   const [activeTab, setActiveTab] = useState<'General' | 'Profile'>('General')
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-    const [darkMode, setDarkMode] = useState(false)
+  const [darkMode, setDarkMode] = useState(false)
   const [expandedSetting, setExpandedSetting] = useState<string | null>(null)
-  const [settingsNotifications, setSettingsNotifications] = useState<any[]>([])
-  const [settingsUnreadCount, setSettingsUnreadCount] = useState(0)
 
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
@@ -53,55 +55,55 @@ export function SettingsView({ onToast }: Props) {
   const [roomNumber, setRoomNumber] = useState('')
   const [studentId, setStudentId] = useState('')
 
-  
-  useEffect(() => {
-    let mounted = true
-    const load = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const res = await usersApi.getMe()
-        console.log('User data:', res.data)
-        if (res.data?.success) {
-          const d = res.data.data
-          if (!mounted) return
-          setDisplayName(d.display_name || '')
-          setEmail(d.email || '')
-          setContactNumber(d.contact_number || '')
-          setRoomNumber(d.room_number || d.room_assignment || '')
-          setStudentId(d.student_id || '')
-        } else {
-          setError(res.data?.message || 'Failed to load profile')
-        }
-        try {
-          const notifRes = await notificationsApi.getNotifications()
-          if (notifRes.data?.success) {
-            setSettingsNotifications(notifRes.data.data.notifications || [])
-            setSettingsUnreadCount(notifRes.data.data.unread_count || 0)
-          }
-        } catch (_) {}
-      } catch (err: any) {
-        setError(err?.message || 'Network error')
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
+  const { scope } = useSession()
+  const guardWrite = useWriteGuard()
 
-    load()
-    return () => { mounted = false }
-  }, [])
+  const profileResource = useResource<UserProfile>({
+    resource: 'profile',
+    scope,
+    ttlMs: TTL.profile,
+    fetcher: async () => {
+      const res = await usersApi.getMe()
+      if (!res.data?.success) throw new Error(res.data?.message)
+      return res.data.data as UserProfile
+    },
+  })
 
-  const loadSettingsNotifications = async () => {
-    try {
+  const notificationsResource = useResource<NotificationsPayload>({
+    resource: 'notifications',
+    scope,
+    ttlMs: TTL.notifications,
+    fetcher: async () => {
       const res = await notificationsApi.getNotifications()
-      if (res.data?.success) {
-        setSettingsNotifications(res.data.data.notifications || [])
-        setSettingsUnreadCount(res.data.data.unread_count || 0)
-      }
-    } catch (_) {}
-  }
+      if (!res.data?.success) throw new Error(res.data?.message)
+      return res.data.data as NotificationsPayload
+    },
+  })
+
+  const settingsNotifications = notificationsResource.data?.notifications ?? []
+  const settingsUnreadCount = notificationsResource.data?.unread_count ?? 0
+
+  // Seed the form from whichever profile arrives first (cache or network) and
+  // reseed only when a genuinely newer copy lands, so an in-progress edit is
+  // never clobbered by a background revalidation.
+  const seededAt = useRef<number | null>(null)
+  useEffect(() => {
+    const profile = profileResource.data
+    if (!profile) return
+    if (seededAt.current === profileResource.fetchedAt) return
+
+    seededAt.current = profileResource.fetchedAt
+    setDisplayName(profile.display_name || '')
+    setEmail(profile.email || '')
+    setContactNumber(profile.contact_number || '')
+    setRoomNumber(profile.room_number || '')
+    setStudentId(profile.student_id || '')
+  }, [profileResource.data, profileResource.fetchedAt])
+
+  const loadSettingsNotifications = notificationsResource.refresh
 
   const handleSave = async () => {
+    if (!guardWrite('save your settings')) return
     try {
       setSaving(true)
       setError(null)
@@ -111,6 +113,7 @@ export function SettingsView({ onToast }: Props) {
         onToast(res.data?.message || 'Failed to save', 'error')
       } else {
         onToast('Settings saved', 'success')
+        await profileResource.refresh()
       }
     } catch (err: any) {
       setError(err?.message || 'Network error')
@@ -156,7 +159,24 @@ export function SettingsView({ onToast }: Props) {
         </div>
       </div>
 
-      
+
+      {profileResource.isStale && (
+        <div className="flex justify-end">
+          <StaleMarker fetchedAt={profileResource.fetchedAt} />
+        </div>
+      )}
+
+      {profileResource.status === 'loading' && (
+        <LoadingState label="Loading your settings" />
+      )}
+
+      {profileResource.status === 'error' && (
+        <ErrorState
+          message={profileResource.error ?? 'Unknown error'}
+          onRetry={profileResource.refresh}
+        />
+      )}
+
       <AnimatePresence mode="wait">
         {activeTab === 'General' ? (
           <motion.div

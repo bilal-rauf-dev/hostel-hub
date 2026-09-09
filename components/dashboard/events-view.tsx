@@ -15,10 +15,15 @@ import {
   RefreshCw
 } from 'lucide-react'
 import Image from 'next/image'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { eventsApi } from '@/lib/api'
 import { isAdmin } from '@/lib/auth'
+import { useResource } from '@/hooks/use-resource'
+import { TTL } from '@/lib/offline/store'
+import { useSession, useWriteGuard } from '@/lib/session/session-context'
+import { EmptyState, ErrorState, LoadingState, StaleMarker } from '@/components/offline/resource-states'
+import type { HostelEvent } from '@/lib/types'
 
 interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => void }
 
@@ -28,12 +33,14 @@ function CreateEventForm({ onDone, onCancel }: { onDone: (s:boolean)=>void, onCa
   const [time, setTime] = useState('')
   const [location, setLocation] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const submit = async () => {
     if (!title || !date || !time || !location) {
-       alert("All fields are required.")
+       setFormError('Every field is required.')
        return
     }
+    setFormError(null)
     try {
       setSubmitting(true)
       const eventDate = `${date}T${time}:00`
@@ -56,6 +63,9 @@ function CreateEventForm({ onDone, onCancel }: { onDone: (s:boolean)=>void, onCa
         </div>
         <input value={location} onChange={e=>setLocation(e.target.value)} placeholder="Location" className="w-full p-4 bg-[#FAF9F6] border border-[#F0F0EE] rounded-2xl text-sm focus:border-[#D4A373] outline-none transition-colors" />
       </div>
+      {formError && (
+        <p className="text-xs font-bold text-red-500">{formError}</p>
+      )}
       <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-[#F0F0EE]">
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={onCancel} className="px-6 py-3 border border-[#F0F0EE] rounded-2xl text-xs font-black uppercase tracking-widest text-[#9A9A9A] hover:bg-[#FAF9F6]">Cancel</motion.button>
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={submit} disabled={submitting} className="px-6 py-3 bg-[#4D5D53] text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-[#4D5D53]/20 hover:bg-[#3D4D43] disabled:opacity-50 flex items-center gap-2">{submitting? 'Saving...':'Create Event'}</motion.button>
@@ -65,53 +75,61 @@ function CreateEventForm({ onDone, onCancel }: { onDone: (s:boolean)=>void, onCa
 }
 
 export function EventsView({ onToast }: Props) {
-  const [events, setEvents] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [searchQuery, setSearchQuery] = useState('')
-  
   const [refreshing, setRefreshing] = useState(false)
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true)
+  const { isGuest } = useSession()
+  const guardWrite = useWriteGuard()
+
+  // Public content, so it lives in the guest scope and is readable by a
+  // signed-out visitor and by anyone whose connection has dropped.
+  const {
+    data,
+    status,
+    error,
+    isStale,
+    fetchedAt,
+    refresh,
+  } = useResource<HostelEvent[]>({
+    resource: 'events',
+    scope: 'guest',
+    ttlMs: TTL.events,
+    fetcher: async () => {
       const res = await eventsApi.getEvents()
-      if (res.data?.success) setEvents(res.data.data || [])
-      else setError(res.data?.message || 'Failed to load events')
-    } catch (err: any) {
-      setError(err?.message || 'Network error')
-    } finally { setLoading(false) }
-  }, [])
+      if (!res.data?.success) throw new Error(res.data?.message)
+      return (res.data.data ?? []) as HostelEvent[]
+    },
+  })
+
+  const events = data ?? []
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await load()
-    setRefreshing(false)
+    try {
+      await refresh()
+    } finally {
+      setRefreshing(false)
+    }
   }
 
-  useEffect(() => {
-    load()
-  }, [load])
-
-  const categories = ['All', ...Array.from(new Set(events.map(e => e.category).filter(Boolean)))]
+  const categories = ['All']
 
   const filteredEvents = events.filter(e => {
      const matchesSearch = (e.title?.toLowerCase() || '').includes(searchQuery.toLowerCase()) || 
                            (e.location?.toLowerCase() || '').includes(searchQuery.toLowerCase())
      if (!matchesSearch) return false
 
-     if (selectedCategory !== 'All' && e.category !== selectedCategory) return false
      return true
   })
 
   const handleRsvp = async (event_id: number, currentRsvp: string | null) => {
+    if (!guardWrite('RSVP to an event')) return
     try {
       const newStatus = currentRsvp === 'going' ? 'not_going' : 'going'
       await eventsApi.rsvpEvent(event_id, newStatus)
-      const res = await eventsApi.getEvents()
-      if (res.data?.success) setEvents(res.data.data || [])
+      await refresh()
       onToast(newStatus === 'going' ? 'You\'re going!' : 'RSVP removed', 'success')
     } catch (err) { onToast('Failed to RSVP', 'error') }
   }
@@ -139,7 +157,7 @@ export function EventsView({ onToast }: Props) {
            </div>
            <p className="text-sm text-[#9A9A9A] font-medium mt-1">Discover and join campus activities.</p>
         </div>
-        {isAdmin() && <motion.button 
+        {isAdmin() && !isGuest && <motion.button 
           whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => setCreating(true)}
@@ -181,10 +199,16 @@ export function EventsView({ onToast }: Props) {
       </div>
 
       <div className="space-y-10">
-        {loading ? (
-           <div className="py-20 text-center text-[#9A9A9A] text-sm">Loading events...</div>
-        ) : error ? (
-           <div className="py-20 text-center text-red-500 text-sm">Error: {error}</div>
+        {isStale && (
+          <div className="flex justify-end">
+            <StaleMarker fetchedAt={fetchedAt} />
+          </div>
+        )}
+
+        {status === 'loading' ? (
+           <LoadingState label="Loading events" />
+        ) : status === 'error' ? (
+           <ErrorState message={error ?? 'Unknown error'} onRetry={refresh} />
         ) : filteredEvents.length === 0 ? (
            <motion.div 
              initial={{ opacity: 0, scale: 0.95 }}
@@ -214,7 +238,7 @@ export function EventsView({ onToast }: Props) {
             >
               <div className="w-full lg:w-96 h-72 lg:h-auto relative overflow-hidden shrink-0 bg-[#FAF9F6]">
                  <Image 
-                   src={event.image || `https://picsum.photos/seed/event${event.event_id}/400/300`}
+                   src={`https://picsum.photos/seed/event${event.event_id}/400/300`}
                    alt={event.title}
                    fill
                    className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
@@ -222,7 +246,7 @@ export function EventsView({ onToast }: Props) {
                  />
                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent lg:hidden" />
                  <div className="absolute top-8 left-8 px-5 py-2 bg-white/90 backdrop-blur-xl rounded-full border border-white/50 text-[10px] font-black uppercase tracking-[0.2em] text-[#4D5D53] transform transition-transform group-hover:scale-110 group-hover:bg-[#E9EDC9]">
-                   {event.category || 'General'}
+                   {'General'}
                  </div>
               </div>
 
@@ -306,8 +330,7 @@ export function EventsView({ onToast }: Props) {
               <CreateEventForm onDone={async (success: boolean) => { 
                  setCreating(false); 
                  if (success) { 
-                    const res = await eventsApi.getEvents(); 
-                    if (res.data?.success) setEvents(res.data.data || []);
+                    await refresh();
                     onToast('Event created successfully', 'success');
                  } else {
                     onToast('Failed to create event', 'error');

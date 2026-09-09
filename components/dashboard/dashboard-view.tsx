@@ -47,43 +47,126 @@ import { SafetyAlertsView } from "./safety-alerts-view";
 import { AdminSettingsView } from "./admin-settings-view";
 import { AdminCommunityView } from "./admin-community-view";
 import { notificationsApi, authApi, usersApi, safetyAlertsApi } from "@/lib/api";
-import { clearTokens, getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
+import { useResource } from "@/hooks/use-resource";
+import { TTL } from "@/lib/offline/store";
+import { useSession, useWriteGuard } from "@/lib/session/session-context";
+import { ConnectionBanner } from "@/components/offline/connection-banner";
+import type {
+  AppNotification,
+  NotificationsPayload,
+  SafetyAlert,
+  UserProfile,
+} from "@/lib/types";
 
+/**
+ * `guest: true` marks a tab backed entirely by public read endpoints, so a
+ * signed-out visitor can open it. Everything else is hidden in guest mode
+ * rather than shown and then failing.
+ */
 const MENU_ITEMS = [
+  { icon: LayoutDashboard, label: "Overview", guest: false },
+  { icon: ShoppingBag, label: "Marketplace", guest: true },
+  { icon: Search, label: "Lost & Found", guest: true },
+  { icon: Wrench, label: "Tickets", guest: false },
+  { icon: Calendar, label: "Events", guest: true },
+  { icon: MessageSquare, label: "Community", guest: false },
+  { icon: BookOpen, label: "Guidebook", guest: true },
+];
+
+const ADMIN_MENU_ITEMS = [
   { icon: LayoutDashboard, label: "Overview" },
-  { icon: ShoppingBag, label: "Marketplace" },
-  { icon: Search, label: "Lost & Found" },
-  { icon: Wrench, label: "Tickets" },
-  { icon: Calendar, label: "Events" },
+  { icon: Wrench, label: "Staff Tickets" },
+  { icon: Users, label: "Verification" },
+  { icon: AlertCircle, label: "Safety alerts" },
   { icon: MessageSquare, label: "Community" },
-  { icon: BookOpen, label: "Guidebook" },
+  { icon: Settings, label: "Controls" },
 ];
 
 interface DashboardViewProps {
-  userRole: "student" | "admin";
+  /** null in guest mode. */
+  userRole: "student" | "admin" | null;
   onLogout: () => void;
 }
 
 export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
+  const { isGuest, scope, promptSignIn } = useSession();
+  const guardWrite = useWriteGuard();
   const isAdminMode = userRole === "admin";
-  const [activeTab, setActiveTab] = useState("Overview");
+
+  const visibleMenuItems = isGuest
+    ? MENU_ITEMS.filter((item) => item.guest)
+    : MENU_ITEMS;
+
+  // A guest has no Overview (it needs personal counts), so land on Marketplace.
+  const [activeTab, setActiveTab] = useState(
+    isGuest ? "Marketplace" : "Overview",
+  );
   const [showNotifications, setShowNotifications] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [toasts, setToasts] = useState<
     { id: number; msg: string; type: "success" | "error" | "info" }[]
   >([]);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [notificationsLoading, setNotificationsLoading] = useState(true);
   const currentUser = getCurrentUser();
-  const [profile, setProfile] = useState<{
-    display_name: string;
-    email: string;
-    user_id: number;
-  } | null>(null);
 
-  const [activeSafetyAlerts, setActiveSafetyAlerts] = useState<any[]>([]);
+  // Notifications and profile are personal: cached under the user scope and
+  // skipped entirely for guests. Safety alerts are public.
+  const notificationsResource = useResource<NotificationsPayload>({
+    resource: "notifications",
+    scope,
+    ttlMs: TTL.notifications,
+    enabled: !isGuest,
+    refreshIntervalMs: 30000,
+    fetcher: async () => {
+      const res = await notificationsApi.getNotifications();
+      if (!res.data?.success) throw new Error(res.data?.message);
+      return res.data.data as NotificationsPayload;
+    },
+  });
+
+  const profileResource = useResource<UserProfile>({
+    resource: "profile",
+    scope,
+    ttlMs: TTL.profile,
+    enabled: !isGuest,
+    fetcher: async () => {
+      const res = await usersApi.getMe();
+      if (!res.data?.success) throw new Error(res.data?.message);
+      return res.data.data as UserProfile;
+    },
+  });
+
+  const alertsResource = useResource<SafetyAlert[]>({
+    resource: "safety-alerts",
+    scope,
+    ttlMs: TTL.safetyAlerts,
+    refreshIntervalMs: 60000,
+    fetcher: async () => {
+      const res = await safetyAlertsApi.getAlerts();
+      if (!res.data?.success) throw new Error(res.data?.message);
+      return (res.data.data ?? []) as SafetyAlert[];
+    },
+  });
+
+  const notifications: AppNotification[] =
+    notificationsResource.data?.notifications ?? [];
+  const unreadCount = notificationsResource.data?.unread_count ?? 0;
+  const notificationsLoading = notificationsResource.status === "loading";
+  const profile = profileResource.data;
+  const activeSafetyAlerts = (alertsResource.data ?? []).filter(
+    (a) => a.is_active,
+  );
+
+  /** Oldest cached timestamp on screen, for the offline banner. */
+  const oldestFetchedAt =
+    [
+      notificationsResource.fetchedAt,
+      profileResource.fetchedAt,
+      alertsResource.fetchedAt,
+    ]
+      .filter((t): t is number => typeof t === "number")
+      .sort((a, b) => a - b)[0] ?? null;
 
   const [showPanicModal, setShowPanicModal] = useState(false);
   const [panicLoading, setPanicLoading] = useState(false);
@@ -100,88 +183,65 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
     }, 4000);
   };
 
-  useEffect(() => {
-    const loadNotifications = async () => {
-      try {
-        setNotificationsLoading(true);
-        const response = await notificationsApi.getNotifications();
-        if (response.data.success) {
-          setNotifications(response.data.data.notifications || []);
-          setUnreadCount(response.data.data.unread_count || 0);
-        }
-      } catch (error) {
-        console.error("Failed to load notifications:", error);
-      } finally {
-        setNotificationsLoading(false);
-      }
-    };
-
-    const loadSafetyAlerts = async () => {
-      try {
-        const response = await safetyAlertsApi.getAlerts();
-        if (response.data.success) {
-          const active = response.data.data.filter((a: any) => a.is_active);
-          setActiveSafetyAlerts(active);
-        }
-      } catch (error) {
-        console.error("Failed to load safety alerts:", error);
-      }
-    };
-
-    loadNotifications();
-    loadSafetyAlerts();
-    (async () => {
-      try {
-        const profileRes = await usersApi.getMe();
-        if (profileRes.data?.success) setProfile(profileRes.data.data);
-      } catch (_) {}
-    })();
-    const notifInterval = setInterval(loadNotifications, 30000);
-    const alertInterval = setInterval(loadSafetyAlerts, 60000);
-    return () => {
-      clearInterval(notifInterval);
-      clearInterval(alertInterval);
-    };
-  }, []);
-
   const handleMarkAsRead = async (notification_id: number) => {
+    if (!guardWrite("mark this notification as read")) return;
     try {
       await notificationsApi.markAsRead(notification_id);
-      setNotifications((prev) => prev.filter((n) => n.id !== notification_id));
-      setUnreadCount((c) => Math.max(0, c - 1));
+      notificationsResource.mutate((current) =>
+        current
+          ? {
+              notifications: current.notifications.filter(
+                (n) => n.notification_id !== notification_id,
+              ),
+              unread_count: Math.max(0, current.unread_count - 1),
+            }
+          : current,
+      );
     } catch (err) {
       console.error("Failed to mark as read", err);
+      addToast("Could not update that notification", "error");
     }
   };
 
   const handleMarkAllRead = async () => {
+    if (!guardWrite("mark notifications as read")) return;
     try {
       await notificationsApi.markAllAsRead();
-      setUnreadCount(0);
-      setNotifications([]);
+      notificationsResource.mutate(() => ({
+        notifications: [],
+        unread_count: 0,
+      }));
     } catch (err) {
       console.error("Failed to mark all as read", err);
+      addToast("Could not update your notifications", "error");
     }
   };
 
   const handleLogout = async () => {
     try {
       await authApi.logout();
-    } catch (_) {
+    } catch {
+      // Server-side logout is best effort; the local wipe below is not.
     }
-    clearTokens();
+    // Clears tokens AND this user's cached data. See SessionProvider.signOut.
     onLogout();
   };
 
   useEffect(() => {
     const t = setTimeout(
-      () => addToast(`Welcome back to the Hostel Hub!`),
+      () =>
+        addToast(
+          isGuest
+            ? "Browsing as a guest. Sign in to post or order."
+            : "Welcome back to the Hostel Hub!",
+        ),
       1500,
     );
     return () => clearTimeout(t);
   }, []);
 
   const handleSendPanicAlert = async () => {
+     if (!guardWrite("raise an emergency alert")) return;
      try {
         setPanicLoading(true)
         await safetyAlertsApi.createAlert({
@@ -241,17 +301,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
               </div>
 
               <nav className="flex-1 space-y-1">
-                {(!isAdminMode
-                  ? MENU_ITEMS
-                  : [
-                      { icon: LayoutDashboard, label: "Overview" },
-                      { icon: Wrench, label: "Staff Tickets" },
-                      { icon: Users, label: "Verification" },
-                      { icon: AlertCircle, label: "Safety alerts" },
-                      { icon: MessageSquare, label: "Community" },
-                      { icon: Settings, label: "Controls" },
-                    ]
-                ).map((item) => (
+                {(!isAdminMode ? visibleMenuItems : ADMIN_MENU_ITEMS).map((item) => (
                   <motion.button
                     key={item.label}
                     whileTap={{ scale: 0.98 }}
@@ -310,17 +360,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
         </div>
 
         <nav className="flex-1 space-y-1 mb-4">
-          {(!isAdminMode
-            ? MENU_ITEMS
-            : [
-                { icon: LayoutDashboard, label: "Overview" },
-                { icon: Wrench, label: "Staff Tickets" },
-                { icon: Users, label: "Verification" },
-                { icon: AlertCircle, label: "Safety alerts" },
-                { icon: MessageSquare, label: "Community" },
-                { icon: Settings, label: "Controls" },
-              ]
-          ).map((item) => (
+          {(!isAdminMode ? visibleMenuItems : ADMIN_MENU_ITEMS).map((item) => (
             <motion.button
               key={item.label}
               whileTap={{ scale: 0.98 }}
@@ -400,7 +440,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                 {isAdminMode ? "Staff Panel" : activeTab}
               </h2>
               <p className="text-[11px] text-[#9A9A9A] font-bold uppercase tracking-widest mt-0.5">
-                Welcome, {isAdminMode ? "Admin" : "Student"}
+                Welcome, {isAdminMode ? "Admin" : isGuest ? "Guest" : "Student"}
               </p>
             </div>
           </div>
@@ -468,12 +508,12 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                       ) : (
                         notifications.map((notif) => (
                           <motion.button
-                            key={notif.notification_id || notif.id}
+                            key={notif.notification_id}
                             whileHover={{
                               x: 4,
                               backgroundColor: "rgba(255, 255, 255, 0.5)",
                             }}
-                            onClick={() => handleMarkAsRead(notif.id)}
+                            onClick={() => handleMarkAsRead(notif.notification_id)}
                             className="w-full text-left p-3 rounded-2xl flex gap-3 transition-colors group/item"
                           >
                             <div className={`p-2.5 rounded-xl shrink-0 group-hover/item:scale-110 transition-transform ${notif.title?.includes('Alert') ? 'bg-red-50 text-red-500' : 'bg-[#FEFAE0] text-[#D4A373]'}`}>
@@ -532,31 +572,35 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                   >
                     <div className="p-5 flex items-center gap-4 border-b border-black/5 mb-2">
                       <div className="w-10 h-10 rounded-xl bg-[#D4A373] flex items-center justify-center text-white font-black text-xs">
-                        {profile?.display_name?.substring(0, 2).toUpperCase() ??
-                          "??"}
+                        {isGuest
+                          ? "G"
+                          : (profile?.display_name?.substring(0, 2).toUpperCase() ??
+                            "??")}
                       </div>
                       <div>
                         <p className="text-sm font-black text-[#4D5D53]">
-                          {profile?.display_name ?? "User"}
+                          {isGuest ? "Guest" : (profile?.display_name ?? "User")}
                         </p>
                         <p className="text-[8px] font-bold text-[#9A9A9A] tracking-wider uppercase">
-                          {isAdminMode ? "Admin" : "Student"} • #
-                          {profile?.user_id}
+                          {isAdminMode ? "Admin" : isGuest ? "Guest" : "Student"}
+                          {!isGuest && <> • #{profile?.user_id}</>}
                         </p>
                         <p className="text-[8px] font-black text-[#D4A373] tracking-wider uppercase mt-1">
-                          {profile?.email}
+                          {isGuest ? "Not signed in" : profile?.email}
                         </p>
                       </div>
                     </div>
                     <div className="space-y-1 px-1">
-                      {[
+                      {(isGuest
+                        ? []
+                        : [
                         { label: "My Profile", icon: User, tab: isAdminMode ? "Controls" : "Settings" },
                         {
                           label: "Orders",
                           icon: ShoppingBag,
                           tab: "Marketplace",
                         },
-                      ].map((item) => (
+                      ]).map((item) => (
                         <motion.button
                           key={item.label}
                           whileHover={{
@@ -583,17 +627,34 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
 
                     <div className="h-[1px] bg-black/5 my-2 mx-2" />
 
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={handleLogout}
-                      className="w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 hover:bg-red-50 transition-colors"
-                    >
-                      <div className="p-2 rounded-lg bg-red-50 ml-1">
-                        <LogOut className="h-4 w-4" />
-                      </div>
-                      <p className="text-xs font-bold">Sign Out</p>
-                    </motion.button>
+                    {isGuest ? (
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => {
+                          setShowAccount(false);
+                          promptSignIn("use your account");
+                        }}
+                        className="w-full p-3 rounded-2xl flex items-center gap-3 text-[#4D5D53] hover:bg-[#FAF9F6] transition-colors"
+                      >
+                        <div className="p-2 rounded-lg bg-[#E9EDC9] ml-1">
+                          <User className="h-4 w-4" />
+                        </div>
+                        <p className="text-xs font-bold">Sign In</p>
+                      </motion.button>
+                    ) : (
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={handleLogout}
+                        className="w-full p-3 rounded-2xl flex items-center gap-3 text-red-500 hover:bg-red-50 transition-colors"
+                      >
+                        <div className="p-2 rounded-lg bg-red-50 ml-1">
+                          <LogOut className="h-4 w-4" />
+                        </div>
+                        <p className="text-xs font-bold">Sign Out</p>
+                      </motion.button>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -619,6 +680,8 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
         )}
 
         <div className="px-6 py-10 lg:px-12 lg:py-14">
+          <ConnectionBanner oldestFetchedAt={oldestFetchedAt} />
+
           <AnimatePresence mode="wait">
             {!isAdminMode ? (
               <motion.div
@@ -656,7 +719,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                 transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
               >
                 {activeTab === "Overview" && (
-                  <AdminDashboardView onNavigate={setActiveTab} />
+                  <AdminDashboardView onNavigate={setActiveTab} onToast={addToast} />
                 )}
                 {activeTab === "Staff Tickets" && (
                   <StaffTicketsView onToast={addToast} />
@@ -672,7 +735,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
               </motion.div>
             )}
 
-            {!MENU_ITEMS.some((item) => item.label === activeTab) &&
+            {!visibleMenuItems.some((item) => item.label === activeTab) &&
               !isAdminMode && (
                 <motion.div
                   key="soon"

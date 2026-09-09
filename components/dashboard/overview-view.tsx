@@ -12,16 +12,18 @@ import {
 } from 'lucide-react'
 
 import Image from 'next/image'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { marketplaceApi, maintenanceApi, usersApi } from '@/lib/api'
+import { useResource } from '@/hooks/use-resource'
+import { TTL } from '@/lib/offline/store'
+import { useSession, useWriteGuard } from '@/lib/session/session-context'
+import { ErrorState, LoadingState, StaleMarker } from '@/components/offline/resource-states'
+import type { Listing, UserSummary } from '@/lib/types'
 
 export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => void }) {
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [recentListings, setRecentListings] = useState<any[]>([])
-  const [recentTickets, setRecentTickets] = useState<any[]>([])
-  const [summary, setSummary] = useState({ ticket_count: 0, order_count: 0, post_count: 0, unread_notifications: 0 })
+  const { scope } = useSession()
+  const guardWrite = useWriteGuard()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [quantityModal, setQuantityModal] = useState<{ visible: boolean; listing?: any }>({ visible: false })
   const [quantityValue, setQuantityValue] = useState(1)
@@ -32,15 +34,14 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
 
   const handlePlaceOrder = async () => {
     if (!quantityModal.listing) return
+    if (!guardWrite('place an order')) return
     try {
       const res = await marketplaceApi.placeOrder(quantityModal.listing.listing_id, quantityValue)
       if (res.data?.success) {
         pushToast('Order placed successfully', 'success')
         setQuantityModal({ visible: false })
         setQuantityValue(1)
-        // Refresh listings
-        const listRes = await marketplaceApi.getListings()
-        if (listRes.data?.success) setRecentListings((listRes.data.data || []).slice(0, 4))
+        await listingsResource.refresh()
       } else {
         setQuantityModal({ visible: false })
         pushToast(res.data?.message || 'Failed to place order', 'error')
@@ -52,37 +53,84 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
     }
   }
 
-  useEffect(() => {
-    let mounted = true
-    const load = async () => {
-      try {
-        setLoading(true)
-        setError(null)
+  const listingsResource = useResource<Listing[]>({
+    resource: 'marketplace:listings',
+    scope: 'guest',
+    ttlMs: TTL.listings,
+    fetcher: async () => {
+      const res = await marketplaceApi.getListings()
+      if (!res.data?.success) throw new Error(res.data?.message)
+      return (res.data.data ?? []) as Listing[]
+    },
+  })
 
-        const [listRes, ticketRes, summaryRes] = await Promise.all([
-          marketplaceApi.getListings(),
-          maintenanceApi.getTickets(),
-          usersApi.getSummary(),
-        ])
+  const ticketsResource = useResource<any[]>({
+    resource: 'maintenance:tickets',
+    scope,
+    ttlMs: TTL.tickets,
+    fetcher: async () => {
+      const res = await maintenanceApi.getTickets()
+      if (!res.data?.success) throw new Error(res.data?.message)
+      return (res.data.data ?? []) as any[]
+    },
+  })
 
-        if (!mounted) return
+  const summaryResource = useResource<UserSummary>({
+    resource: 'users:summary',
+    scope,
+    ttlMs: TTL.profile,
+    fetcher: async () => {
+      const res = await usersApi.getSummary()
+      if (!res.data?.success) throw new Error(res.data?.message)
+      return res.data.data as UserSummary
+    },
+  })
 
-        if (listRes.data?.success) setRecentListings((listRes.data.data || []).slice(0, 4))
-        if (ticketRes.data?.success) setRecentTickets((ticketRes.data.data || []).slice(0, 4))
-        if (summaryRes.data?.success) setSummary(summaryRes.data.data)
-      } catch (err: any) {
-        setError(err?.message || 'Failed to load overview')
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
+  const recentListings = (listingsResource.data ?? []).slice(0, 4)
+  const recentTickets = (ticketsResource.data ?? []).slice(0, 4)
+  const summary: UserSummary = summaryResource.data ?? {
+    ticket_count: 0,
+    order_count: 0,
+    post_count: 0,
+    unread_notifications: 0,
+  }
 
-    load()
-    return () => { mounted = false }
-  }, [])
+  const anyLoading =
+    listingsResource.status === 'loading' ||
+    ticketsResource.status === 'loading' ||
+    summaryResource.status === 'loading'
 
-  if (loading) return <div className="p-6">Loading overview...</div>
-  if (error) return <div className="p-6 text-red-500">Error: {error}</div>
+  const anyStale =
+    listingsResource.isStale || ticketsResource.isStale || summaryResource.isStale
+
+  const oldestFetchedAt =
+    [listingsResource.fetchedAt, ticketsResource.fetchedAt, summaryResource.fetchedAt]
+      .filter((t): t is number => typeof t === 'number')
+      .sort((a, b) => a - b)[0] ?? null
+
+  // Only a total failure with nothing cached is an error page. If any one
+  // panel has data, the dashboard still renders.
+  const allFailed =
+    listingsResource.status === 'error' &&
+    ticketsResource.status === 'error' &&
+    summaryResource.status === 'error'
+
+  const retryAll = async () => {
+    await Promise.all([
+      listingsResource.refresh(),
+      ticketsResource.refresh(),
+      summaryResource.refresh(),
+    ])
+  }
+
+  if (anyLoading) return <LoadingState label="Loading your overview" />
+  if (allFailed)
+    return (
+      <ErrorState
+        message={listingsResource.error ?? 'Cannot reach the server.'}
+        onRetry={retryAll}
+      />
+    )
 
   return (
     <motion.div 
@@ -91,6 +139,12 @@ export function OverviewView({ onNavigate }: { onNavigate?: (tab: string) => voi
       transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
       className="space-y-8"
     >
+      {anyStale && (
+        <div className="flex justify-end">
+          <StaleMarker fetchedAt={oldestFetchedAt} />
+        </div>
+      )}
+
       {/* Toast */}
       {toast && (
         <div className={`p-3 rounded-lg text-sm ${toast.type === 'success' ? 'bg-green-500/20 text-green-600' : 'bg-red-500/20 text-red-500'}`}>

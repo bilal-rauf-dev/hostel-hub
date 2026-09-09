@@ -35,7 +35,7 @@ async def get_current_user(
                 """
                 SELECT user_id, email, student_id, display_name, profile_picture,
                        contact_number, room_number, role, is_verified, is_suspended,
-                       password_hash, fcm_token, created_at
+                       fcm_token, created_at
                 FROM users
                 WHERE user_id = %s
                 """,
@@ -53,3 +53,25 @@ async def require_admin(user: dict[str, Any] = Depends(get_current_user)) -> dic
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+async def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    pool=Depends(get_db_pool),
+) -> dict[str, Any] | None:
+    """Resolve the caller if a valid token is present, otherwise return None.
+
+    Used by public read endpoints so a guest can browse. A handler that takes
+    this dependency MUST branch on `user is None` and select a narrower column
+    set for guests -- redaction happens in the SQL, never by deleting keys from
+    a dict afterwards.
+    """
+    if credentials is None:
+        return None
+
+    try:
+        return await get_current_user(credentials, pool)
+    except HTTPException:
+        # An expired or malformed token degrades to guest rather than 401,
+        # so a stale tab still renders public content.
+        return None

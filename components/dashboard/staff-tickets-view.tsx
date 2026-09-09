@@ -13,7 +13,12 @@ import {
   Inbox,
   RefreshCw
 } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { useResource } from "@/hooks/use-resource";
+import { TTL } from "@/lib/offline/store";
+import { useSession, useWriteGuard } from "@/lib/session/session-context";
+import { ErrorState, LoadingState, StaleMarker } from "@/components/offline/resource-states";
+import type { Ticket } from "@/lib/types";
 import { createPortal } from "react-dom";
 import { maintenanceApi, usersApi } from "@/lib/api";
 
@@ -22,38 +27,51 @@ interface Props { onToast: (msg: string, type: 'success' | 'error' | 'info') => 
 export function StaffTicketsView({ onToast }: Props) {
   const [filter, setFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
-  const [tickets, setTickets] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
-  const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [assignMenuId, setAssignMenuId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await maintenanceApi.getAllTickets();
-      if (res.data?.success) setTickets(res.data.data || []);
-      else setError(res.data?.message || "Failed to load");
 
-      const usersRes = await usersApi.getAllUsers();
-      if (usersRes.data?.success) {
-        setAdminUsers(
-          (usersRes.data.data || []).filter((u: any) => u.role === "admin"),
-        );
+  const { scope } = useSession();
+  const guardWrite = useWriteGuard();
+
+  const { data, status, error, isStale, fetchedAt, refresh, mutate } = useResource<{
+    tickets: Ticket[];
+    adminUsers: any[];
+  }>({
+    resource: "maintenance:tickets:all",
+    scope,
+    ttlMs: TTL.tickets,
+    fetcher: async () => {
+      const res = await maintenanceApi.getAllTickets();
+      if (!res.data?.success) throw new Error(res.data?.message);
+
+      let adminUsers: any[] = [];
+      try {
+        const usersRes = await usersApi.getAllUsers();
+        if (usersRes.data?.success) {
+          adminUsers = (usersRes.data.data ?? []).filter(
+            (u: any) => u.role === "admin",
+          );
+        }
+      } catch {
+        // The assignee list failing must not hide the ticket queue.
       }
-    } catch (e: any) {
-      setError(e?.message || "Network error");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+
+      return { tickets: (res.data.data ?? []) as Ticket[], adminUsers };
+    },
+  });
+
+  const tickets = data?.tickets ?? [];
+  const adminUsers = data?.adminUsers ?? [];
+  const load = refresh;
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await load();
-    setRefreshing(false);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   useEffect(() => {
@@ -68,16 +86,22 @@ export function StaffTicketsView({ onToast }: Props) {
     return () => document.removeEventListener("mousedown", handleMouseDown);
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
   const updateStatus = async (ticket_id: number, status: string) => {
+    if (!guardWrite("update a ticket")) return;
     try {
       const res = await maintenanceApi.updateTicketStatus(ticket_id, status);
       if (res.data?.success) {
-        setTickets((prev) =>
-          prev.map((t) => (t.ticket_id === ticket_id ? { ...t, status } : t)),
+        mutate((current) =>
+          current
+            ? {
+                ...current,
+                tickets: current.tickets.map((t) =>
+                  t.ticket_id === ticket_id
+                    ? { ...t, status: status as Ticket["status"] }
+                    : t,
+                ),
+              }
+            : current,
         );
       } else {
         onToast(res.data?.message || "Failed to update status", "error");
@@ -89,12 +113,18 @@ export function StaffTicketsView({ onToast }: Props) {
   };
 
   const assignTo = async (ticket_id: number, assigned_to: number) => {
+    if (!guardWrite("assign a ticket")) return;
     try {
       await maintenanceApi.assignTicket(ticket_id, assigned_to);
-      setTickets((prev) =>
-        prev.map((t) =>
-          t.ticket_id === ticket_id ? { ...t, assigned_to } : t,
-        ),
+      mutate((current) =>
+        current
+          ? {
+              ...current,
+              tickets: current.tickets.map((t) =>
+                t.ticket_id === ticket_id ? { ...t, assigned_to } : t,
+              ),
+            }
+          : current,
       );
     } catch (e) {
       console.error(e);
@@ -188,10 +218,16 @@ export function StaffTicketsView({ onToast }: Props) {
 
       {/* Tickets List */}
       <div className="grid grid-cols-1 gap-4">
-        {loading ? (
-          <div className="p-6 text-sm text-[#9A9A9A] text-center py-20">Loading tickets...</div>
-        ) : error ? (
-          <div className="p-6 text-red-500 text-center py-20">Error: {error}</div>
+        {isStale && (
+          <div className="flex justify-end">
+            <StaleMarker fetchedAt={fetchedAt} />
+          </div>
+        )}
+
+        {status === "loading" ? (
+          <LoadingState label="Loading the ticket queue" />
+        ) : status === "error" ? (
+          <ErrorState message={error ?? "Unknown error"} onRetry={refresh} />
         ) : filteredTickets.length === 0 ? (
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
@@ -215,10 +251,10 @@ export function StaffTicketsView({ onToast }: Props) {
               >
                 <div
                   className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${
-                    ticket.priority === "High"
-                      ? "bg-red-50 text-red-500"
-                      : ticket.priority === "Medium"
-                        ? "bg-orange-50 text-orange-500"
+                    ticket.status === "submitted"
+                      ? "bg-orange-50 text-orange-500"
+                      : ticket.status === "resolved" || ticket.status === "closed"
+                        ? "bg-emerald-50 text-emerald-500"
                         : "bg-blue-50 text-blue-500"
                   }`}
                 >
@@ -244,20 +280,18 @@ export function StaffTicketsView({ onToast }: Props) {
                 </div>
 
                 <div className="flex items-center gap-8 md:px-8 border-l border-r border-[#F0F0EE]/50 h-12">
+                  {/*
+                    There was a Priority chip here keyed on ticket.priority.
+                    maintenance_tickets has no priority column and the API never
+                    returned one, so it rendered undefined in every row. Replaced
+                    with the room, which the queue actually needs.
+                  */}
                   <div>
                     <p className="text-[8px] font-black text-[#BDBDBD] uppercase tracking-widest mb-1">
-                      Priority
+                      Room
                     </p>
-                    <span
-                      className={`text-[10px] font-black px-2 py-1 rounded-lg ${
-                        ticket.priority === "High"
-                          ? "bg-red-100 text-red-600"
-                          : ticket.priority === "Medium"
-                            ? "bg-orange-100 text-orange-600"
-                            : "bg-blue-100 text-blue-600"
-                      }`}
-                    >
-                      {ticket.priority}
+                    <span className="text-xs font-black text-[#4D5D53]">
+                      {ticket.room_number ?? ticket.student_room ?? "--"}
                     </span>
                   </div>
                   <div>
@@ -354,10 +388,16 @@ export function StaffTicketsView({ onToast }: Props) {
                                   ticket.ticket_id,
                                 );
                                 if (res.data?.success) {
-                                  setTickets((prev) =>
-                                    prev.filter(
-                                      (t) => t.ticket_id !== ticket.ticket_id,
-                                    ),
+                                  mutate((current) =>
+                                    current
+                                      ? {
+                                          ...current,
+                                          tickets: current.tickets.filter(
+                                            (t) =>
+                                              t.ticket_id !== ticket.ticket_id,
+                                          ),
+                                        }
+                                      : current,
                                   );
                                   onToast("Ticket deleted", "success");
                                 } else {

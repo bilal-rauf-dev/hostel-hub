@@ -1,6 +1,6 @@
 # Plan: Offline-first reads and guest mode
 
-**Status:** Planned, not started
+**Status:** All phases implemented on the branch, uncommitted.
 **Branch:** `feat/offline-first-guest-mode`
 **Decision record:** [ADR 0001](../adr/0001-offline-first-with-guest-mode.md)
 
@@ -331,3 +331,258 @@ Phase 5  tests + manual verification ...... gate before merge to main
 Phases 1 and 2 ship behind no flag because nothing consumes them yet. Phase 3
 onward is user-visible; keep `main` deployable by merging complete phases
 rather than partial ones.
+
+
+---
+
+## Implementation log
+
+Written after the build pass. Everything below is on the branch and
+**uncommitted** -- review it before committing anything.
+
+### What landed
+
+**Phase 0**
+- `.gitattributes` added. The renormalise commit itself has NOT been run;
+  do `git add --renormalize .` and commit it alone before anything else.
+- `.env.example` rewritten for this project's real variables.
+- Maintenance-mode contract bug fixed: `app/page.tsx` now reads
+  `data.enabled`. It also no longer locks the user out when the check itself
+  cannot reach the server, which was the wrong behaviour for an offline-capable
+  app.
+- `lib/types/` created: `api.ts` plus one file per module.
+- CORS moved to a `CORS_ORIGINS` env var (`settings.cors_origin_list`).
+- `get_current_user` no longer selects `password_hash`.
+
+**Phase 1** - `lib/offline/store.ts`. IndexedDB wrapper with scoped keys, TTLs,
+`CACHE_SCHEMA_VERSION` invalidation, quota eviction, and an in-memory fallback
+for private browsing.
+
+**Phase 2** - `lib/offline/resource.ts` (cache-then-network, dedupe, error
+mapping), `lib/offline/connectivity.tsx` (health probe with backoff, visibility
+aware), `hooks/use-resource.ts` (the React binding), `lib/offline/format.ts`.
+
+**Phase 3**
+- `get_optional_user` in `backend/auth/dependencies.py`. An expired token
+  degrades to guest rather than 401, so a stale tab still shows public content.
+- Public reads: guidebook, safety alerts, events, lost & found, marketplace
+  listings. Redaction is in the SQL. Guests get `created_by`, `reporter` and
+  `seller_id` as `NULL::int`, so listings cannot be used to enumerate
+  residents.
+- `GET /api/v1/public/bootstrap` in `backend/modules/public/`.
+- `lib/session/session-context.tsx`: three modes, `useWriteGuard`, and a
+  `signOut` that clears the user's cache scope before dropping the identity.
+- `components/offline/`: connection banner, four resource states, sign-in
+  prompt modal.
+- "Continue as guest" on the login form.
+- The axios 401 interceptor no longer tries to refresh when no refresh token
+  exists, so a guest hitting a private route is not bounced to login.
+
+**Phase 4** - migrated: guidebook, events, lost & found, marketplace, overview,
+and the dashboard shell (notifications, profile, safety alerts). The shell's two
+unconditional `setInterval` polls are gone; revalidation is visibility-aware.
+
+### Bugs the type layer surfaced
+
+Worth reading, because these were all live:
+
+1. **Placing an order has never worked.** `place_order()` inserts `'pending'`
+   into `order_status`, an enum of `('confirmed','delivered','cancelled')`.
+   `marketplace_orders.status` also defaults to `'pending'`. Both are invalid.
+   Fixed by `database/migrations/0001_add_pending_order_status.sql`, which must
+   be applied.
+2. **Notifications could not be marked read.** The dashboard filtered on
+   `notif.id`; the API returns `notification_id`, so the click did nothing.
+3. **Dead UI branches** in marketplace keyed on `'fulfilled'`, a status the
+   database cannot produce.
+4. **Missing fields** rendered as `undefined`: `event.image`, `event.category`,
+   `item.image` (the column is `image_url`). The events category filter was
+   filtering on a field the API never returns.
+5. `item_date` can be null, and `new Date(null)` was being formatted.
+
+### Not done
+
+- **Phase 5 is partial.** `npx tsc --noEmit` and `npx next build` both pass
+  clean. No test suite was added -- Vitest, RTL and pytest still need setting
+  up, and the manual matrix in Phase 5 has not been run against a live backend.
+- Views still on the old fetch pattern: tickets, community, settings,
+  staff-tickets, verification, admin-community, admin-settings,
+  admin-dashboard, safety-alerts (admin). All are authenticated-only, so they
+  are correct today, just not cached.
+- The 400-line split for `marketplace-view.tsx` (838 lines) and
+  `admin-community-view.tsx` (1022 lines) has not been done.
+- `refactor-toast.js` is still at the repo root. The device shell cannot delete
+  files; remove it by hand.
+
+### Verify before merging
+
+The one that matters: sign in as user A, browse, sign out, sign in as user B on
+the same browser, and confirm none of A's orders, tickets or notifications
+appear. `SessionProvider.signOut` clears the `user:<id>:` scope, but this is
+the failure mode worth checking by hand.
+
+
+---
+
+## Second pass
+
+### Views migrated
+
+Tickets, community, settings, staff tickets, safety alerts (admin) and the
+admin dashboard now read through `useResource`. All are user-scoped, so their
+cache is wiped on sign-out.
+
+### Views deliberately left uncached
+
+`verification-view` and `admin-settings-view` read live only, on purpose. Both
+are operational tools where stale data is worse than no data: a cached
+verification queue invites an admin to approve someone another admin has
+already handled, and cached system settings would misrepresent whether
+maintenance mode is actually on. They do get write guards, so an offline admin
+is told why an action cannot go through rather than watching it fail.
+
+`admin-community-view` is not migrated. At 1022 lines with four independent
+resources it needs the 400-line split first.
+
+### Tests
+
+Vitest with jsdom and `fake-indexeddb`. `npm test` runs them.
+
+- `tests/store.test.ts` -- round trip, TTL expiry, single-key removal, and two
+  scope-isolation cases including the one that matters: `clearScope('user:1')`
+  must not touch `user:12` or `guest`.
+- `tests/resource.test.ts` -- cache paints before the network, a network
+  failure with cache is `ready + stale` rather than `error`, a failure without
+  cache is `error`, disabled skips the network, fresh results are written back,
+  plus dedupe and error-message mapping.
+- `tests/format.test.ts` -- relative timestamps.
+
+20 tests. One of them found a real boundary bug on the first run: staleness
+used `>` where it should use `>=`, so an entry whose TTL had exactly elapsed
+still counted as fresh. Fixed in `lib/offline/store.ts`.
+
+### More bugs the types surfaced
+
+6. **The staff ticket board's Priority chip has never worked.**
+   `maintenance_tickets` has no priority column and the API never returned one,
+   so every row rendered `undefined` in the fallback colour. Replaced with the
+   room number, which the queue actually needs.
+7. **Safety alert severities did not match the database.** The UI branched on
+   `'warning'`; the enum is `low | medium | high | critical`, so every
+   non-critical alert fell through to the blue "info" style. Now mapped
+   properly.
+8. **Poll response counts always read zero.** The view showed
+   `poll.total_votes || poll.totalVotes || 0`; the polls endpoint returns
+   neither. Now summed from the per-option `vote_count` the results endpoint
+   does return.
+
+### Verification
+
+`npx tsc --noEmit` clean, `npx next build` clean, `npm test` 20/20. The manual
+matrix in Phase 5 still needs running against a live backend, and step 6 -- two
+users on one browser -- is the one not to skip even though the automated scope
+test now covers the mechanism.
+
+### Still open
+
+- `admin-community-view.tsx` (1022 lines) and `marketplace-view.tsx` (838
+  lines) both need the 400-line split.
+- `admin-dashboard-view.tsx` still uses `alert()` for errors. It has no
+  `onToast` prop; wiring one is a small follow-up.
+- `refactor-toast.js` still at the repo root; the device shell cannot delete
+  files.
+- No component-level tests yet, only the cache and resource layers.
+
+
+---
+
+## Third pass
+
+### File splits
+
+`marketplace-view.tsx` went from 838 lines to 395, and
+`admin-community-view.tsx` from 1022 to 260. Both are now composition and
+event handling only; data access moved into hooks and rendering into child
+components.
+
+```
+hooks/use-marketplace-data.ts          three cached resources + a combined reload
+hooks/use-admin-community-data.ts      posts, polls with results, events, entries
+
+components/ui/modal-shell.tsx          portal, backdrop, Escape, focus restore
+components/dashboard/marketplace/
+    create-listing-form.tsx
+    listing-card.tsx
+    order-rows.tsx                     MyListingRow, ReceivedOrderRow, MyOrderRow
+    quantity-modal.tsx
+    order-detail-modal.tsx
+components/dashboard/admin-community/
+    tabs.tsx                           Posts, Polls, Events, Guidebook
+    create-modals.tsx                  poll, event, guidebook entry
+    detail-modals.tsx                  post, poll, event, entry
+```
+
+Every file created by this split is under the 400-line limit in
+`docs/02-frontend-standards.md`, and so is `marketplace-view.tsx` itself.
+
+Six view files are still over it and were not touched, because splitting them
+was not what this feature needed and doing it blind is how regressions get in:
+
+| File | Lines |
+| :-- | --: |
+| `dashboard-view.tsx` | 869 |
+| `community-view.tsx` | 666 |
+| `staff-tickets-view.tsx` | 495 |
+| `tickets-view.tsx` | 469 |
+| `overview-view.tsx` | 457 |
+| `lost-found-view.tsx` | 410 |
+
+`dashboard-view.tsx` is the one worth doing next: it is the app shell, and the
+sidebar, header, notification panel, account menu and panic modal are five
+independent pieces sharing one file.
+
+Three modals repeated the same portal and backdrop markup, and none of them
+handled Escape or restored focus on close. `ModalShell` does all of it once.
+It lives in `components/ui/` because the admin panel needed it too;
+`components/dashboard/marketplace/modal-shell.tsx` is left as a one-line
+re-export so nothing dangles.
+
+`admin-community-view` is also migrated to `useResource` now, so the admin
+panel reads from cache like everything else, and its four deletes share one
+guarded helper rather than repeating the guard-run-reload-toast sequence.
+
+### Browser dialogs removed
+
+`admin-dashboard-view` used `alert()` for two error paths. It now takes an
+`onToast` prop like every other view. `events-view`'s create form used
+`alert()` for validation; it renders an inline message instead. No `alert()`,
+`confirm()` or `prompt()` calls remain in the dashboard.
+
+### Component tests
+
+`tests/resource-states.test.tsx` -- the four states render distinctly, empty
+never reads as an error, retry only appears when there is something to retry,
+and the stale marker renders nothing without a timestamp.
+
+`tests/session.test.tsx` -- all three session modes resolve correctly; the
+write guard lets a signed-in online user through silently, asks a guest to
+sign in and names the action, and tells an offline user it is the connection
+rather than their account; and `signOut` calls `clearScope('user:42')` before
+clearing tokens.
+
+31 tests total. `tsc --noEmit`, `next build` and `npm test` all clean.
+
+### Accessibility picked up along the way
+
+The marketplace listing card was a `div` with an onClick, unreachable by
+keyboard. It is a real button now with an accessible name. Form inputs in the
+extracted modals gained labels, tab buttons gained `aria-pressed`, icon-only
+buttons gained `aria-label`, and decorative icons are `aria-hidden`.
+
+### Still open
+
+- The Phase 5 manual matrix against a live backend, including two users on one
+  browser.
+- No tests over the views themselves, only the layers underneath and the two
+  shared components.
+- `refactor-toast.js` still at the repo root.
