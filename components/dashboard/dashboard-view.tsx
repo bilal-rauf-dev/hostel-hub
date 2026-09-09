@@ -719,7 +719,7 @@ export function DashboardView({ userRole, onLogout }: DashboardViewProps) {
                 transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
               >
                 {activeTab === "Overview" && (
-                  <AdminDashboardView onNavigate={setActiveTab} />
+                  <AdminDashboardView onNavigate={setActiveTab} onToast={addToast} />
                 )}
                 {activeTab === "Staff Tickets" && (
                   <StaffTicketsView onToast={addToast} />

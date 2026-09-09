@@ -492,3 +492,97 @@ test now covers the mechanism.
 - `refactor-toast.js` still at the repo root; the device shell cannot delete
   files.
 - No component-level tests yet, only the cache and resource layers.
+
+
+---
+
+## Third pass
+
+### File splits
+
+`marketplace-view.tsx` went from 838 lines to 395, and
+`admin-community-view.tsx` from 1022 to 260. Both are now composition and
+event handling only; data access moved into hooks and rendering into child
+components.
+
+```
+hooks/use-marketplace-data.ts          three cached resources + a combined reload
+hooks/use-admin-community-data.ts      posts, polls with results, events, entries
+
+components/ui/modal-shell.tsx          portal, backdrop, Escape, focus restore
+components/dashboard/marketplace/
+    create-listing-form.tsx
+    listing-card.tsx
+    order-rows.tsx                     MyListingRow, ReceivedOrderRow, MyOrderRow
+    quantity-modal.tsx
+    order-detail-modal.tsx
+components/dashboard/admin-community/
+    tabs.tsx                           Posts, Polls, Events, Guidebook
+    create-modals.tsx                  poll, event, guidebook entry
+    detail-modals.tsx                  post, poll, event, entry
+```
+
+Every file created by this split is under the 400-line limit in
+`docs/02-frontend-standards.md`, and so is `marketplace-view.tsx` itself.
+
+Six view files are still over it and were not touched, because splitting them
+was not what this feature needed and doing it blind is how regressions get in:
+
+| File | Lines |
+| :-- | --: |
+| `dashboard-view.tsx` | 869 |
+| `community-view.tsx` | 666 |
+| `staff-tickets-view.tsx` | 495 |
+| `tickets-view.tsx` | 469 |
+| `overview-view.tsx` | 457 |
+| `lost-found-view.tsx` | 410 |
+
+`dashboard-view.tsx` is the one worth doing next: it is the app shell, and the
+sidebar, header, notification panel, account menu and panic modal are five
+independent pieces sharing one file.
+
+Three modals repeated the same portal and backdrop markup, and none of them
+handled Escape or restored focus on close. `ModalShell` does all of it once.
+It lives in `components/ui/` because the admin panel needed it too;
+`components/dashboard/marketplace/modal-shell.tsx` is left as a one-line
+re-export so nothing dangles.
+
+`admin-community-view` is also migrated to `useResource` now, so the admin
+panel reads from cache like everything else, and its four deletes share one
+guarded helper rather than repeating the guard-run-reload-toast sequence.
+
+### Browser dialogs removed
+
+`admin-dashboard-view` used `alert()` for two error paths. It now takes an
+`onToast` prop like every other view. `events-view`'s create form used
+`alert()` for validation; it renders an inline message instead. No `alert()`,
+`confirm()` or `prompt()` calls remain in the dashboard.
+
+### Component tests
+
+`tests/resource-states.test.tsx` -- the four states render distinctly, empty
+never reads as an error, retry only appears when there is something to retry,
+and the stale marker renders nothing without a timestamp.
+
+`tests/session.test.tsx` -- all three session modes resolve correctly; the
+write guard lets a signed-in online user through silently, asks a guest to
+sign in and names the action, and tells an offline user it is the connection
+rather than their account; and `signOut` calls `clearScope('user:42')` before
+clearing tokens.
+
+31 tests total. `tsc --noEmit`, `next build` and `npm test` all clean.
+
+### Accessibility picked up along the way
+
+The marketplace listing card was a `div` with an onClick, unreachable by
+keyboard. It is a real button now with an accessible name. Form inputs in the
+extracted modals gained labels, tab buttons gained `aria-pressed`, icon-only
+buttons gained `aria-label`, and decorative icons are `aria-hidden`.
+
+### Still open
+
+- The Phase 5 manual matrix against a live backend, including two users on one
+  browser.
+- No tests over the views themselves, only the layers underneath and the two
+  shared components.
+- `refactor-toast.js` still at the repo root.

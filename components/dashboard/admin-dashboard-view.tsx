@@ -25,9 +25,10 @@ import {
 
 interface AdminDashboardViewProps {
   onNavigate: (tab: string) => void
+  onToast: (msg: string, type: 'success' | 'error' | 'info') => void
 }
 
-export function AdminDashboardView({ onNavigate }: AdminDashboardViewProps) {
+export function AdminDashboardView({ onNavigate, onToast }: AdminDashboardViewProps) {
   const [selectedTicket, setSelectedTicket] = useState<any | null>(null)
   const [ticketStatus, setTicketStatus] = useState('submitted')
   const [savingTicket, setSavingTicket] = useState(false)
@@ -56,13 +57,14 @@ export function AdminDashboardView({ onNavigate }: AdminDashboardViewProps) {
           : current,
       )
       setSelectedTicket(null)
+      onToast('Ticket updated', 'success')
     } else {
       console.error('Update failed:', res.data?.message)
-      alert(res.data?.message || 'Failed to update ticket status')
+      onToast(res.data?.message || 'Failed to update ticket status', 'error')
     }
   } catch (e: any) {
     console.error(e)
-    alert(e?.response?.data?.message || 'An error occurred')
+    onToast(e?.response?.data?.message || 'Could not update the ticket', 'error')
   } finally {
     setSavingTicket(false)
   }

@@ -33,12 +33,14 @@ function CreateEventForm({ onDone, onCancel }: { onDone: (s:boolean)=>void, onCa
   const [time, setTime] = useState('')
   const [location, setLocation] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const submit = async () => {
     if (!title || !date || !time || !location) {
-       alert("All fields are required.")
+       setFormError('Every field is required.')
        return
     }
+    setFormError(null)
     try {
       setSubmitting(true)
       const eventDate = `${date}T${time}:00`
@@ -61,6 +63,9 @@ function CreateEventForm({ onDone, onCancel }: { onDone: (s:boolean)=>void, onCa
         </div>
         <input value={location} onChange={e=>setLocation(e.target.value)} placeholder="Location" className="w-full p-4 bg-[#FAF9F6] border border-[#F0F0EE] rounded-2xl text-sm focus:border-[#D4A373] outline-none transition-colors" />
       </div>
+      {formError && (
+        <p className="text-xs font-bold text-red-500">{formError}</p>
+      )}
       <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-[#F0F0EE]">
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={onCancel} className="px-6 py-3 border border-[#F0F0EE] rounded-2xl text-xs font-black uppercase tracking-widest text-[#9A9A9A] hover:bg-[#FAF9F6]">Cancel</motion.button>
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={submit} disabled={submitting} className="px-6 py-3 bg-[#4D5D53] text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-[#4D5D53]/20 hover:bg-[#3D4D43] disabled:opacity-50 flex items-center gap-2">{submitting? 'Saving...':'Create Event'}</motion.button>
